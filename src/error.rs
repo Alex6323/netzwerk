@@ -4,6 +4,10 @@ use std::io;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error(display = "Socket Binding Error")]
-    SocketBindingError(#[source] io::Error),
+    #[error(display = "Binding to socket failed")]
+    SocketBindingFailed(#[source] io::Error),
+    #[error(display = "Attempted to send a message to an unknown peer")]
+    AttemptedSendingToUnknownPeer,
+    #[error(display = "Attempted to receive a message from an unknown peer")]
+    AttemptedReceivingFromUnknownPeer,
 }
