@@ -10,7 +10,7 @@ mod broker;
 mod config;
 mod connection;
 mod error;
-mod event;
 mod message;
 mod peer;
 mod result;
+mod signal;
