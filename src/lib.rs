@@ -4,16 +4,16 @@ pub use connection::{Connection, Connections, Tcp, Udp, Protocol};
 pub use message::Message;
 pub use peer::{Peer, PeerId, Peers};
 
+pub mod error;
 pub mod util;
+pub mod result;
 
 mod address;
 mod broker;
 mod config;
 mod connection;
-mod error;
 mod message;
 mod peer;
-mod result;
 mod signal;
 
 
@@ -24,13 +24,13 @@ pub fn init() {
 }
 
 /// Tries to send a message to a peer.
-pub fn try_send_to_peer(peer: Peer, message: Message) {
+pub fn try_send_to_peer(peer: Peer, message: impl Message) {
     // TODO
     unimplemented!("netzwerk::try_send_to_peer")
 }
 
 /// Tries to recv a message from a peer.
-pub fn try_recv_from_peer(peer: Peer) -> result::Result<Message> {
+pub fn try_recv_from_peer<M: Message>(peer: Peer) -> result::Result<M> {
     // TODO
     unimplemented!("netzwer::try_recv_from_peer")
 }

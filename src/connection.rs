@@ -12,8 +12,8 @@ const BUFFER_SIZE: usize = 1604;
 
 #[async_trait]
 pub trait RawIO {
-    async fn send(&self, message: Message) -> result::Result<()>;
-    async fn recv(&mut self) -> result::Result<Message>;
+    async fn send(&self, message: impl Message) -> result::Result<()>;
+    async fn recv<M: Message>(&mut self) -> result::Result<M>;
 }
 
 pub struct Udp {
@@ -33,16 +33,18 @@ impl Udp {
 
 #[async_trait]
 impl RawIO for Udp {
-    async fn send(&self, message: Message) -> result::Result<()> {
+    async fn send(&self, message: impl Message) -> result::Result<()> {
         //(*self.socket).send_to(&message[..n], &self.address).await?;
 
         unimplemented!("UDP send")
     }
-    async fn recv(&mut self) -> result::Result<Message> {
+    async fn recv<M: Message>(&mut self) -> result::Result<M> {
         let mut buf = vec![0u8; BUFFER_SIZE];
         let (n, peer_addr) = self.socket.recv_from(&mut buf).await?;
+
         // TODO: ignore, if `peer_addr` doesn't correspond to
-        Ok(Message::Transaction(Bytes::from(buf)))
+
+        Ok(Message::from_bytes(Bytes::from(buf)).unwrap())
     }
 }
 
@@ -59,10 +61,10 @@ impl Tcp {
 
 #[async_trait]
 impl RawIO for Tcp {
-    async fn send(&self, message: Message) -> result::Result<()> {
+    async fn send(&self, message: impl Message) -> result::Result<()> {
         unimplemented!("TCP send")
     }
-    async fn recv(&mut self) -> result::Result<Message> {
+    async fn recv<M: Message>(&mut self) -> result::Result<M> {
         unimplemented!("TCP recv")
     }
 }
@@ -78,10 +80,10 @@ impl Connection<Tcp> {
     pub fn new(stream: TcpStream) -> Self {
         Self(Tcp::new(stream))
     }
-    pub async fn send(&self, message: Message) -> result::Result<()> {
+    pub async fn send(&self, message: impl Message) -> result::Result<()> {
         Ok(self.0.send(message).await?)
     }
-    pub async fn recv(&mut self) -> result::Result<Message> {
+    pub async fn recv<M: Message>(&mut self) -> result::Result<M> {
         Ok(self.0.recv().await?)
     }
 }
@@ -91,10 +93,10 @@ impl Connection<Udp> {
     pub fn new(udp_socket: UdpSocket, peer_address: SocketAddr) -> Self {
         Self(Udp::new(udp_socket, peer_address))
     }
-    pub async fn send(&self, message: Message) -> result::Result<()> {
+    pub async fn send(&self, message: impl Message) -> result::Result<()> {
         Ok(self.0.send(message).await?)
     }
-    pub async fn recv(&mut self) -> result::Result<Message> {
+    pub async fn recv<M: Message>(&mut self) -> result::Result<M> {
         Ok(self.0.recv().await?)
     }
 }
@@ -107,7 +109,7 @@ impl<R: RawIO> Connections<R> {
         Self(HashMap::new())
     }
 
-    async fn send(&self, message: Message, to_peer: PeerId) -> result::Result<()> {
+    async fn send(&self, message: impl Message, to_peer: PeerId) -> result::Result<()> {
         if !self.0.contains_key(&to_peer) {
             return Err(error::Error::AttemptedSendingToUnknownPeer);
         }
@@ -116,7 +118,7 @@ impl<R: RawIO> Connections<R> {
         Ok(peer_conn.0.send(message).await?)
     }
 
-    async fn recv(&mut self, from_peer: PeerId) -> result::Result<Message> {
+    async fn recv<M: Message>(&mut self, from_peer: PeerId) -> result::Result<M> {
         if !self.0.contains_key(&from_peer) {
             return Err(error::Error::AttemptedReceivingFromUnknownPeer);
         }

@@ -1,13 +1,15 @@
 // Run this with `cargo r --example node`
 
-use netzwerk::{Address, Peer, Peers, Connections, Protocol, Tcp, Udp, TcpBroker};
+use netzwerk::{Address, Peer, Peers, Connections, Message, Protocol, Tcp, Udp, TcpBroker};
 
 use config::NodeConfig;
+use utf8msg::Utf8Message;
 
 use async_std::task;
 use crossbeam_channel as mpmc;
 
 mod config;
+mod utf8msg;
 
 struct TcpOnlyNode {
     config: NodeConfig,
@@ -35,7 +37,7 @@ impl TcpOnlyNode {
         */
     }
 
-    pub fn broadcast_random_message_to_connected_peers(&mut self) {
+    pub fn broadcast_message_to_connected_peers(&mut self, msg: impl Message) {
         for (id, peer) in &*self.peers {
             if peer.is_connected() {
                 // send message
@@ -56,5 +58,11 @@ fn main() {
 
     let mut node = TcpOnlyNode::from_config(config);
     println!("created node");
+
     node.run();
+
+
+    let msg = Utf8Message::new("hello netzwerk");
+
+    node.broadcast_message_to_connected_peers(msg);
 }

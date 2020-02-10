@@ -10,4 +10,8 @@ pub enum Error {
     AttemptedSendingToUnknownPeer,
     #[error(display = "Attempted to receive a message from an unknown peer")]
     AttemptedReceivingFromUnknownPeer,
+    #[error(display = "Message could not be serialized into bytes")]
+    MessageSerializationError,
+    #[error(display = "Message could not be deserialized into bytes")]
+    MessageDeserializationError,
 }
