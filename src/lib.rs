@@ -1,4 +1,5 @@
 pub use peer::{Peer, PeerId, Peers};
+pub use connection::{Connection, Connections, Tcp, Udp};
 
 pub mod api;
 

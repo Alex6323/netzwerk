@@ -1,4 +1,3 @@
-use crate::address::Address;
 use crate::error;
 use crate::message::Message;
 use crate::result;
@@ -125,6 +124,12 @@ impl<R: RawIO> Connections<R> {
         let mut peer_conn = self.0.get_mut(&from_peer).unwrap();
         Ok(peer_conn.0.recv().await?)
     }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum Protocol {
+    Tcp,
+    Udp,
 }
 
 #[cfg(test)]

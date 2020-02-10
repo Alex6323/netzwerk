@@ -1,3 +1,6 @@
+use crate::address::Address;
+use crate::connection::Protocol;
+
 use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 
 use std::collections::HashMap;
@@ -5,58 +8,47 @@ use std::collections::HashMap;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct PeerId(SocketAddr);
 
+impl From<Address> for PeerId {
+    fn from(addr: Address) -> Self {
+        match addr {
+            Address::Tcp(socket_addr) => Self(socket_addr),
+            Address::Udp(socket_addr) => Self(socket_addr),
+
+        }
+    }
+}
+
 pub struct Peer {
+    /// The ID of the peer to recognize it across connections.
     id: PeerId,
-    address: SocketAddr,
+    /// The address of the peer, e.g. a socket address.
+    address: Address,
+    /// The current state of the peer {NotConnected, Connected, ...}.
     state: PeerState,
 }
 
 impl Peer {
-    pub async fn from_address(address: impl ToSocketAddrs) -> Self {
-        // TODO: proper error handling
-        let address = address.to_socket_addrs().await.unwrap().nth(0).unwrap();
-        Self { id: PeerId(address), address, state: Default::default() }
-    }
-
-    pub fn from_ipv4_address(ipv4_address: Ipv4Addr, port: Option<u16>) -> Self {
-        let port = if let Some(port) = port {
-            port
-        } else {
-            0
-        };
-
-        let address = SocketAddr::V4(SocketAddrV4::new(ipv4_address, port));
-        Self { id: PeerId(address), address, state: Default::default() }
-    }
-
-    pub fn from_ipv6_address(ipv6_address: Ipv6Addr, port: Option<u16>) -> Self {
-        let port = if let Some(port) = port {
-            port
-        } else {
-            0
-        };
-
-        let address = SocketAddr::V6(SocketAddrV6::new(ipv6_address, port, 0, 0));
-        Self { id: PeerId(address), address, state: Default::default() }
+    pub fn from_address(address: Address) -> Self {
+        Self { id: address.into(), address, state: Default::default() }
     }
 
     pub fn id(&self) -> PeerId {
         self.id
     }
 
-    pub fn address(&self) -> &SocketAddr {
+    pub fn address(&self) -> &Address {
         &self.address
     }
 
-    pub fn connected(&self) -> bool {
+    pub fn is_connected(&self) -> bool {
         self.state.connected()
     }
 
-    pub fn connecting(&self) -> bool {
+    pub fn is_connecting(&self) -> bool {
         self.state.connecting()
     }
 
-    pub fn idle(&self) -> bool {
+    pub fn is_idle(&self) -> bool {
         self.state.idle()
     }
 }
