@@ -15,17 +15,17 @@ pub enum Address {
 }
 
 impl Address {
-    pub async fn from_address(address: impl ToSocketAddrs, p: Protocol) -> Self {
+    pub async fn new(addr: impl ToSocketAddrs, proto: Protocol) -> Self {
         // TODO: proper error handling
-        let address = address.to_socket_addrs().await.unwrap().nth(0).unwrap();
+        let address = addr.to_socket_addrs().await.unwrap().nth(0).unwrap();
 
-        match p {
+        match proto {
             Protocol::Tcp => Address::Tcp(address),
             Protocol::Udp => Address::Udp(address),
         }
     }
 
-    pub fn from_ipv4_address(ipv4_address: Ipv4Addr, port: Option<u16>, p: Protocol) -> Self {
+    pub fn from_ipv4(ipv4_address: Ipv4Addr, port: Option<u16>, proto: Protocol) -> Self {
         let port = if let Some(port) = port {
             port
         } else {
@@ -34,13 +34,13 @@ impl Address {
 
         let address = SocketAddr::V4(SocketAddrV4::new(ipv4_address, port));
 
-        match p {
+        match proto {
             Protocol::Tcp => Address::Tcp(address),
             Protocol::Udp => Address::Udp(address),
         }
     }
 
-    pub fn from_ipv6_address(ipv6_address: Ipv6Addr, port: Option<u16>, p: Protocol) -> Self {
+    pub fn from_ipv6(ipv6_address: Ipv6Addr, port: Option<u16>, proto: Protocol) -> Self {
         let port = if let Some(port) = port {
             port
         } else {
@@ -49,7 +49,7 @@ impl Address {
 
         let address = SocketAddr::V6(SocketAddrV6::new(ipv6_address, port, 0, 0));
 
-        match p {
+        match proto {
             Protocol::Tcp => Address::Tcp(address),
             Protocol::Udp => Address::Udp(address),
         }

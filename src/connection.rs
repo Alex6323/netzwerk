@@ -126,7 +126,8 @@ impl<R: RawIO> Connections<R> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Protocol {
     Tcp,
     Udp,

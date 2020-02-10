@@ -40,6 +40,10 @@ impl Peer {
         &self.address
     }
 
+    pub fn protocol(&self) -> Protocol {
+        self.address.protocol()
+    }
+
     pub fn is_connected(&self) -> bool {
         self.state.connected()
     }
