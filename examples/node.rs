@@ -1,44 +1,60 @@
 // Run this with `cargo r --example node`
 
-use netzwerk::api;
 use netzwerk::{Address, Peer, Peers, Connections, Protocol, Tcp, Udp, TcpBroker};
 
-use config::Config;
+use config::NodeConfig;
 
 use async_std::task;
 use crossbeam_channel as mpmc;
 
 mod config;
 
-struct NetzwerkNode {
+struct TcpOnlyNode {
+    config: NodeConfig,
     peers: Peers,
-    tcp: TcpBroker,
+    conns: TcpBroker,
 }
 
-impl NetzwerkNode {
-    pub async fn from_config(config: Config) -> Self {
-        let mut peers = Peers::new();
-        peers.add(Peer::from_address(Address::new("127.0.0.1:1337", Protocol::Tcp).await));
-        peers.add(Peer::from_address(Address::new("127.0.0.1:1338", Protocol::Tcp).await));
+impl TcpOnlyNode {
+    pub fn from_config(config: NodeConfig) -> Self {
+        let peers = config.peers();
 
         Self {
+            config,
             peers,
-            tcp: TcpBroker::new(),
+            conns: TcpBroker::new(),
+
         }
     }
 
-    pub fn broadcast(&mut self) {
+    pub fn run(&self) {
+        /*
+        task::spawn(async {
+            self.conns.run().await;
+        });
+        */
+    }
+
+    pub fn broadcast_random_message_to_connected_peers(&mut self) {
+        for (id, peer) in &*self.peers {
+            if peer.is_connected() {
+                // send message
+            }
+        }
 
     }
 }
 
 fn main() {
-    api::init();
+    //netzwerk::init();
 
-    let config = Config::builder().build();
-    task::block_on(async {
-        let mut node = NetzwerkNode::from_config(config).await;
-        println!("created node");
-    });
+    let config = NodeConfig::builder()
+        .with_host_binding("localhost:1337")
+        .with_peer("tcp://localhost:1338")
+        .with_peer("tcp://localhost:1339")
+        .build();
 
+    let mut node = TcpOnlyNode::from_config(config);
+    println!("created node");
+    node.run();
 }

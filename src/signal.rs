@@ -4,9 +4,9 @@ use crate::connection::Protocol;
 pub enum Signal {
     /// A peer has been added to the peer list. Accept connection, and attempt to (re)connect.
     AddedPeer(PeerId),
-    /// A peer has been removed from the peer list. Ignore connection attempts, and don't (re)connect anylonger.
+    /// A peer has been removed from the peer list. Ignore further connection attempts, and don't (re)connect anylonger.
     RemovedPeer(PeerId),
-    /// A peer has been successfully connected.
+    /// A peer has been successfully connected using some supported protocol.
     ConnectedPeer(PeerId, Protocol),
     /// A peer has been disconnected for some reason.
     DisconnectedPeer(PeerId),

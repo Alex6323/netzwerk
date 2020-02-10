@@ -1,18 +1,19 @@
-use crate::address::Address;
+use crate::address::Url;
 use crate::connection::Protocol;
 
 use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 
 use std::collections::HashMap;
+use std::ops;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct PeerId(SocketAddr);
 
-impl From<Address> for PeerId {
-    fn from(addr: Address) -> Self {
-        match addr {
-            Address::Tcp(socket_addr) => Self(socket_addr),
-            Address::Udp(socket_addr) => Self(socket_addr),
+impl From<Url> for PeerId {
+    fn from(url: Url) -> Self {
+        match url {
+            Url::Tcp(socket_addr) => Self(socket_addr),
+            Url::Udp(socket_addr) => Self(socket_addr),
 
         }
     }
@@ -21,27 +22,27 @@ impl From<Address> for PeerId {
 pub struct Peer {
     /// The ID of the peer to recognize it across connections.
     id: PeerId,
-    /// The address of the peer, e.g. a socket address.
-    address: Address,
+    /// The URL of the peer, i.e. its address and network protocol.
+    url: Url,
     /// The current state of the peer {NotConnected, Connected, ...}.
     state: PeerState,
 }
 
 impl Peer {
-    pub fn from_address(address: Address) -> Self {
-        Self { id: address.into(), address, state: Default::default() }
+    pub fn from_url(url: Url) -> Self {
+        Self { id: url.into(), url, state: Default::default() }
     }
 
     pub fn id(&self) -> PeerId {
         self.id
     }
 
-    pub fn address(&self) -> &Address {
-        &self.address
+    pub fn address(&self) -> &Url {
+        &self.url
     }
 
     pub fn protocol(&self) -> Protocol {
-        self.address.protocol()
+        self.url.protocol()
     }
 
     pub fn is_connected(&self) -> bool {
@@ -83,6 +84,14 @@ impl Peers {
 
     pub fn remove(&mut self, id: &PeerId) {
         self.0.remove(id);
+    }
+}
+
+impl ops::Deref for Peers {
+    type Target = HashMap<PeerId, Peer>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -136,7 +145,7 @@ mod tests {
         #[test]
         fn create_new_peer() {
             task::block_on(async {
-                let peer = Peer::from_address("127.0.0.1:1337").await;
+                let peer = Peer::from_url("tcp://localhost:1337").await;
                 assert_eq!(peer.address().to_string(), "127.0.0.1:1337");
             })
         }

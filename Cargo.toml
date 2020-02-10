@@ -13,3 +13,4 @@ crossbeam-channel = "0.4.0"
 err-derive = "0.2.2"
 futures = "0.3.4"
 serde = { version = "1.0.104", features = ["derive"] }
+url = "2.1.1"

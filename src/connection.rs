@@ -133,6 +133,16 @@ pub enum Protocol {
     Udp,
 }
 
+impl From<&str> for Protocol {
+    fn from(s: &str) -> Self {
+        match s {
+            "tcp" => Self::Tcp,
+            "udp" => Self::Udp,
+            _ => panic!("Unknown protocol specifier"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
