@@ -100,6 +100,7 @@ impl Connection<Udp> {
     }
 }
 
+/// A registry for all established connections.
 pub struct Connections<R: RawIO>(HashMap<PeerId, Connection<R>>);
 
 impl<R: RawIO> Connections<R> {

@@ -1,7 +1,8 @@
 pub use peer::{Peer, PeerId, Peers};
 
+pub mod api;
+
 mod address;
-mod api;
 mod config;
 mod connection;
 mod error;
