@@ -14,12 +14,12 @@ use netzwerk::{
     Config,
     Connections,
     Command, CommandReceiver, CommandSender,
-    EventTx,
+    Event, EventTx,
     log::*,
     Message,
     Peer, PeerId, Peers,
     Protocol,
-    Tcp,
+    tcp::*,
 };
 
 use common::*;
@@ -53,15 +53,36 @@ impl TcpNode {
 
     pub fn init(&mut self) {
         let event_tx = netzwerk::init(Config {});
-        self.event_tx = Some(event_tx);
     }
 
     pub fn add_peer(&self, peer: Peer) {
-
+        if let Some(event_tx) = &self.event_tx {
+            event_tx.send(Event::NewPeer { peer });
+        }
     }
 
-    pub fn remove_peer(&self, peer_id: PeerId) {
+    pub fn drop_peer(&self, peer_id: PeerId) {
+        if let Some(event_tx) = &self.event_tx {
+            event_tx.send(Event::DropPeer { peer_id });
+        }
+    }
 
+    pub fn shutdown(&self) {
+        if let Some(event_tx) = &self.event_tx {
+            event_tx.send(Event::Shutdown);
+        }
+    }
+
+    pub fn send_msg(&self, message: impl Message, peer_id: PeerId) {
+        if let Some(event_tx) = &self.event_tx {
+            event_tx.send(Event::SendMessage { bytes: message.into_bytes(), peer_id });
+        }
+    }
+
+    pub fn broadcast_msg(&self, message: impl Message) {
+        if let Some(event_tx) = &self.event_tx {
+            event_tx.send(Event::BroadcastMessage { bytes: message.into_bytes() });
+        }
     }
 
     pub fn run(&self) {

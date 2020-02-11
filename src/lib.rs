@@ -1,5 +1,5 @@
 pub use address::{Address, Url};
-pub use connection::{Connection, Connections, Tcp, Udp, Protocol};
+pub use connections::{Connection, Connections, Protocol};
 pub use commands::{Command, CommandSender, CommandReceiver};
 pub use config::Config;
 pub use events::{Event, EventTx};
@@ -10,20 +10,23 @@ pub use log;
 pub mod error;
 pub mod util;
 pub mod result;
+pub mod tcp;
+pub mod udp;
 
 mod address;
-mod broker;
 mod config;
-mod connection;
+mod connections;
 mod commands;
 mod events;
 mod message;
 mod peers;
 
-/// Initializes the `netzwerk` API.
+use connections as conns;
+
 pub fn init(config: config::Config) -> EventTx {
-    // TODO: remove this!
-    use broker as conns;
+
+    bind_tcp_listener();
+    bind_udp_socket();
 
     let (event_tx, event_rx) = events::channel();
 
@@ -33,14 +36,10 @@ pub fn init(config: config::Config) -> EventTx {
     event_tx
 }
 
-/// Tries to send a message to a peer.
-pub fn try_send_to_peer(peer: Peer, message: impl Message) {
+fn bind_tcp_listener() {
     // TODO
-    unimplemented!("netzwerk::try_send_to_peer")
 }
 
-/// Tries to recv a message from a peer.
-pub fn try_recv_from_peer<M: Message>(peer: Peer) -> result::Result<M> {
+fn bind_udp_socket() {
     // TODO
-    unimplemented!("netzwer::try_recv_from_peer")
 }

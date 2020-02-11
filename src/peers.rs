@@ -1,9 +1,9 @@
 use crate::address::Url;
-use crate::connection::Protocol;
+use crate::connections::Protocol;
 use crate::events::{Event, EventRx};
 
 use async_std::task;
-use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+use async_std::net::SocketAddr;
 
 use std::collections::HashMap;
 use std::ops;

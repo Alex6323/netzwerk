@@ -67,7 +67,7 @@ impl NodeConfigBuilder {
 
     pub fn with_binding(mut self, binding_addr: impl ToSocketAddrs) -> Self {
         let binding_addr = util::to_single_socket_address(binding_addr);
-        self.binding_addr.replace(Address::Socket(binding_addr));
+        self.binding_addr.replace(Address::Ip(binding_addr));
         self
     }
 
@@ -79,7 +79,7 @@ impl NodeConfigBuilder {
 
     pub fn build(self) -> NodeConfig {
         NodeConfig {
-            id: self.id.unwrap_or(Address::new("localhost:1337").port().to_string()),
+            id: self.id.unwrap_or(Address::new("localhost:1337").port().unwrap().to_string()),
             binding_addr: self.binding_addr.unwrap_or(Address::new("localhost:1337")),
             peers: self.peers,
         }

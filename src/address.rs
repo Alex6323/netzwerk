@@ -1,39 +1,60 @@
-use crate::connection::Protocol;
+use crate::connections::Protocol;
 use crate::util;
 
 use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Address {
-    Socket(SocketAddr),
-    SocketV4(SocketAddrV4),
-    SocketV6(SocketAddrV6),
+    Ip(SocketAddr),
 }
 
 impl Address {
     pub fn new(addr: impl ToSocketAddrs) -> Self {
         let addr = util::to_single_socket_address(addr);
-        Address::Socket(addr)
+        Address::Ip(addr)
     }
 
-    pub fn port(&self) -> u16 {
-        match *self {
-            Address::Socket(addr) => addr.port(),
-            Address::SocketV4(addr) => addr.port(),
-            Address::SocketV6(addr) => addr.port(),
+    pub fn port(&self) -> Option<u16> {
+        if let Address::Ip(socket_addr) = *self {
+            Some(socket_addr.port())
+        } else {
+            None
+        }
+    }
+
+    pub fn socket_addr(&self) -> Option<SocketAddr> {
+        if let Address::Ip(socket_addr) = *self {
+            Some(socket_addr)
+        } else {
+            None
+        }
+    }
+
+    pub fn is_ipv4(&self) -> bool {
+        if let Address::Ip(socket_addr) = *self {
+            socket_addr.is_ipv4()
+        } else {
+            false
+        }
+    }
+
+    pub fn is_ipv6(&self) -> bool {
+        if let Address::Ip(socket_addr) = *self {
+            socket_addr.is_ipv6()
+        } else {
+            false
         }
     }
 }
+
+// TODO: use 'url' crate for parsing.
 
 #[derive(Clone, Copy, Debug)]
 pub enum Url {
     /// Represents a TCP url ("tcp://...").
     Tcp(SocketAddr),
-
     /// Represents a UDP url ("udp://...").
     Udp(SocketAddr),
-
-    // Note: this list might get extended in the future
 }
 
 impl Url {

@@ -1,10 +1,9 @@
 use crate::address::Address;
-use crate::message::Message;
 use crate::peers::{Peer, PeerId};
 
 use async_std::net::{TcpStream, UdpSocket};
+use bytes::Bytes;
 use crossbeam_channel as mpmc;
-use std::sync::Arc;
 
 pub enum Event {
     NewPeer {
@@ -22,21 +21,19 @@ pub enum Event {
     },
     NewUdpConnection {
         peer_id: PeerId,
-        socket: Arc<UdpSocket>,
         address: Address,
+        socket: UdpSocket,
     },
     DropUdpConnection {
         peer_id: PeerId,
     },
-    /*
     SendMessage {
         peer_id: PeerId,
-        message: dyn Message,
+        bytes: Bytes,
     },
     BroadcastMessage {
-        message: dyn Message,
+        bytes: Bytes,
     },
-    */
     Shutdown,
 }
 
