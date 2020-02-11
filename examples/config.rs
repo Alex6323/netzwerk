@@ -4,7 +4,8 @@ use netzwerk::util;
 use async_std::net::ToSocketAddrs;
 
 pub struct NodeConfig {
-    host: Address,
+    pub id: String,
+    pub host: Address,
     peers: Vec<Url>,
 }
 
@@ -23,6 +24,7 @@ impl NodeConfig {
 }
 
 pub struct NodeConfigBuilder {
+    id: Option<String>,
     host: Option<Address>,
     peers: Vec<Url>,
 }
@@ -30,9 +32,15 @@ pub struct NodeConfigBuilder {
 impl NodeConfigBuilder {
     pub fn new() -> Self {
         Self {
+            id: None,
             host: None,
             peers: vec![],
         }
+    }
+
+    pub fn with_identifier(mut self, id: &str) -> Self {
+        self.id.replace(id.into());
+        self
     }
 
     pub fn with_host_binding(mut self, host_addr: impl ToSocketAddrs) -> Self {
@@ -49,6 +57,7 @@ impl NodeConfigBuilder {
 
     pub fn build(self) -> NodeConfig {
         NodeConfig {
+            id: self.id.unwrap_or(Address::new("localhost:1337").port().to_string()),
             host: self.host.unwrap_or(Address::new("localhost:1337")),
             peers: self.peers,
         }

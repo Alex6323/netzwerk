@@ -38,6 +38,10 @@ impl TcpOnlyNode {
         }
     }
 
+    pub fn id(&self) -> &String {
+        &self.config.id
+    }
+
     pub fn run(&self) {
         /*
         task::spawn(async {
@@ -61,13 +65,14 @@ fn main() {
     screen::init();
 
     let config = NodeConfig::builder()
+        .with_identifier("A")
         .with_host_binding("localhost:1337")
         .with_peer("tcp://localhost:1338")
         .with_peer("tcp://localhost:1339")
         .build();
 
     let mut node = TcpOnlyNode::from_config(config);
-    logger::info("created node");
+    logger::info(&format!("Created node <<{}>>", node.id()));
 
     node.run();
 

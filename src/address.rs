@@ -8,14 +8,20 @@ pub enum Address {
     Socket(SocketAddr),
     SocketV4(SocketAddrV4),
     SocketV6(SocketAddrV6),
-    Ipv4(Ipv4Addr),
-    Ipv6(Ipv6Addr),
 }
 
 impl Address {
     pub fn new(addr: impl ToSocketAddrs) -> Self {
         let addr = util::to_single_socket_address(addr);
         Address::Socket(addr)
+    }
+
+    pub fn port(&self) -> u16 {
+        match *self {
+            Address::Socket(addr) => addr.port(),
+            Address::SocketV4(addr) => addr.port(),
+            Address::SocketV6(addr) => addr.port(),
+        }
     }
 }
 
