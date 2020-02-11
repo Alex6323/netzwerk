@@ -1,8 +1,10 @@
 pub use address::{Address, Url};
-pub use broker::{TcpBroker, UdpBroker};
 pub use connection::{Connection, Connections, Tcp, Udp, Protocol};
+pub use commands::{Command, CommandSender, CommandReceiver};
+pub use config::Config;
+pub use events::{Event, EventTx};
 pub use message::Message;
-pub use peer::{Peer, PeerId, Peers};
+pub use peers::{Peer, PeerId, Peers};
 pub use log;
 
 pub mod error;
@@ -13,14 +15,22 @@ mod address;
 mod broker;
 mod config;
 mod connection;
+mod commands;
+mod events;
 mod message;
-mod peer;
-mod signal;
-
+mod peers;
 
 /// Initializes the `netzwerk` API.
-pub fn init() {
-    // TODO
+pub fn init(config: config::Config) -> EventTx {
+    // TODO: remove this!
+    use broker as conns;
+
+    let (event_tx, event_rx) = events::channel();
+
+    conns::start_el(event_rx.clone());
+    peers::start_el(event_rx.clone());
+
+    event_tx
 }
 
 /// Tries to send a message to a peer.

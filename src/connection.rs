@@ -1,12 +1,16 @@
 use crate::error;
 use crate::message::Message;
 use crate::result;
-use crate::peer::PeerId;
+use crate::peers::PeerId;
 
 use async_std::net::{TcpStream, UdpSocket, SocketAddr};
 use async_trait::async_trait;
 use bytes::Bytes;
+use futures::channel::mpsc;
 use std::collections::HashMap;
+use std::ops;
+
+// TODO: move Tcp/Udp stuff in their respective sub-modules.
 
 const BUFFER_SIZE: usize = 1604;
 
@@ -76,7 +80,6 @@ pub type UdpConnection = Connection<Udp>;
 pub type TcpConnection = Connection<Tcp>;
 
 impl Connection<Tcp> {
-    /// Creates a new TCP connection.
     pub fn new(stream: TcpStream) -> Self {
         Self(Tcp::new(stream))
     }
@@ -89,7 +92,6 @@ impl Connection<Tcp> {
 }
 
 impl Connection<Udp> {
-    /// Creates a new UDP connection.
     pub fn new(udp_socket: UdpSocket, peer_address: SocketAddr) -> Self {
         Self(Udp::new(udp_socket, peer_address))
     }
@@ -107,6 +109,30 @@ pub struct Connections<R: RawIO>(HashMap<PeerId, Connection<R>>);
 impl<R: RawIO> Connections<R> {
     pub fn new() -> Self {
         Self(HashMap::new())
+    }
+
+    pub fn num(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn insert(&mut self, peer_id: PeerId, conn: Connection<R>) {
+        self.0.insert(peer_id, conn);
+    }
+
+    pub fn remove(&mut self, peer_id: &PeerId) {
+        self.0.remove(peer_id);
+    }
+
+    pub fn get(&self, peer_id: &PeerId) -> Option<&Connection<R>> {
+        self.0.get(peer_id)
+    }
+
+    pub fn get_mut(&mut self, peer_id: &PeerId) -> Option<&mut Connection<R>> {
+        self.0.get_mut(peer_id)
+    }
+
+    pub fn broadcast(&self, message: impl Message) {
+        // TODO: send message using all connections
     }
 
     async fn send(&self, message: impl Message, to_peer: PeerId) -> result::Result<()> {

@@ -1,10 +1,28 @@
 use crate::address::Url;
 use crate::connection::Protocol;
+use crate::events::{Event, EventRx};
 
+use async_std::task;
 use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 
 use std::collections::HashMap;
 use std::ops;
+
+/// Starts the event loop.
+pub fn start_el(event_rx: EventRx) {
+    let mut peers = Peers::new();
+
+    task::spawn(async move {
+        while let Ok(event) = event_rx.recv() {
+            match event {
+                Event::NewPeer { peer } => peers.add(peer),
+                Event::DropPeer { peer_id } => peers.remove(&peer_id),
+                Event::Shutdown => break,
+                _ => (),
+            }
+        }
+    });
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct PeerId(SocketAddr);

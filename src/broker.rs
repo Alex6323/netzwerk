@@ -1,39 +1,32 @@
-use crate::connection::{Connection, Connections, Tcp, Udp};
+use crate::connection::{Connections, Tcp, TcpConnection};
+use crate::commands::{Command, CommandReceiver};
+use crate::peers::{Peer, PeerId};
+use crate::events::{Event, EventRx};
 
-use crossbeam_channel as mpmc;
-use futures::channel as mpsc;
+use async_std::task;
+use log::*;
 
-/// Manages all TCP connections. Runs its own async event loop to process
-/// incoming and outgoing TCP packets.
-pub struct TcpBroker {
-    conns: Connections<Tcp>,
-}
+/// Starts the event loop.
+pub fn start_el(event_rx: EventRx) {
+    let mut tcp_conns = Connections::new();
 
-impl TcpBroker {
-    pub fn new() -> Self {
-        Self {
-            conns: Connections::new(),
+    task::spawn(async move {
+        while let Ok(event) = event_rx.recv() {
+            match event {
+                Event::NewTcpConnection { peer_id, stream } => tcp_conns.insert(peer_id, TcpConnection::new(stream)),
+                Event::DropTcpConnection { peer_id } => tcp_conns.remove(&peer_id),
+                /*
+                Event::BroadcastMessage { message } => {
+                    // TODO: send message via all TCP connections
+                }
+                Event::SendMessage { peer_id, message } => {
+                    // FIXME: error handling
+                    let conn = tcp_conns.get(&peer_id).expect("connection not found");
+                }
+                */
+                Event::Shutdown => break,
+                _ => (),
+            }
         }
-    }
-    pub async fn run(&self) {
-       // TODO
-    }
-}
-
-/// Manages all UDP connections. Runs its own async event loop to process
-/// incoming and outging UDP packets.
-pub struct UdpBroker {
-    conns: Connections<Udp>,
-}
-
-impl UdpBroker {
-    pub fn new() -> Self {
-        Self {
-            conns: Connections::new(),
-        }
-    }
-
-    pub async fn run(&self) {
-        // TODO
-    }
+    });
 }

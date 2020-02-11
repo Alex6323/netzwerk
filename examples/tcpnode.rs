@@ -9,33 +9,41 @@
 //! cargo r --example tcpnode -- --id A --bind localhost:1337 --peers tcp://localhost:1338 tcp://localhost:1339
 //! ```
 
-use netzwerk::{Address, Peer, Peers, Connections, Message, Protocol, Tcp, Udp, TcpBroker};
-use netzwerk::log::*;
+use netzwerk::{
+    Address,
+    Config,
+    Connections,
+    Command, CommandReceiver, CommandSender,
+    EventTx,
+    log::*,
+    Message,
+    Peer, PeerId, Peers,
+    Protocol,
+    Tcp,
+};
 
 use common::*;
 
 use async_std::task;
 use crossbeam_channel as mpmc;
+use futures::channel as mpsc;
 
 mod common;
 
 struct TcpNode {
     config: NodeConfig,
     peers: Peers,
-    conns: TcpBroker,
+    event_tx: Option<EventTx>,
 }
 
 impl TcpNode {
     pub fn from_config(config: NodeConfig) -> Self {
-        netzwerk::init();
-
         let peers = config.peers();
 
         Self {
             config,
             peers,
-            conns: TcpBroker::new(),
-
+            event_tx: None,
         }
     }
 
@@ -43,12 +51,21 @@ impl TcpNode {
         &self.config.id
     }
 
+    pub fn init(&mut self) {
+        let event_tx = netzwerk::init(Config {});
+        self.event_tx = Some(event_tx);
+    }
+
+    pub fn add_peer(&self, peer: Peer) {
+
+    }
+
+    pub fn remove_peer(&self, peer_id: PeerId) {
+
+    }
+
     pub fn run(&self) {
-        /*
-        task::spawn(async {
-            self.conns.run().await;
-        });
-        */
+        // TODO
     }
 
     pub fn broadcast_message_to_connected_peers(&mut self, msg: impl Message) {
@@ -70,7 +87,7 @@ fn main() {
     let mut node = TcpNode::from_config(config);
     logger::info(&format!("Created node <<{}>>", node.id()));
 
-    node.run();
+    node.init();
 
     let msg = Utf8Message::new("hello netzwerk");
 
