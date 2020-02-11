@@ -1,11 +1,11 @@
 use netzwerk::{Address, Peer, Peers, Protocol, Url};
 use netzwerk::util;
 
-use async_std::net::{ToSocketAddrs};
+use async_std::net::ToSocketAddrs;
 
 pub struct NodeConfig {
     host: Address,
-    peers: Vec<Url>, // maybe this tuple should be just replaced with Url
+    peers: Vec<Url>,
 }
 
 impl NodeConfig {

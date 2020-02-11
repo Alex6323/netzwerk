@@ -3,6 +3,7 @@ pub use broker::{TcpBroker, UdpBroker};
 pub use connection::{Connection, Connections, Tcp, Udp, Protocol};
 pub use message::Message;
 pub use peer::{Peer, PeerId, Peers};
+pub use log;
 
 pub mod error;
 pub mod util;
@@ -20,7 +21,6 @@ mod signal;
 /// Initializes the `netzwerk` API.
 pub fn init() {
     // TODO
-    unimplemented!("netzwerk::init");
 }
 
 /// Tries to send a message to a peer.
