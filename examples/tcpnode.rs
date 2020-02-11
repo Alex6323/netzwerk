@@ -2,29 +2,25 @@
 //! You might want to run several instances of such a node in separate
 //! terminals and connect those instances by specifying commandline arguments.
 //!
-//! Run it with `cargo r --example node`
+//! Run it with `cargo r --example tcpnode`
 
 use netzwerk::{Address, Peer, Peers, Connections, Message, Protocol, Tcp, Udp, TcpBroker};
 use netzwerk::log::*;
 
-use config::NodeConfig;
-use utf8msg::Utf8Message;
+use common::*;
 
 use async_std::task;
 use crossbeam_channel as mpmc;
 
-mod config;
-mod logger;
-mod screen;
-mod utf8msg;
+mod common;
 
-struct TcpOnlyNode {
+struct TcpNode {
     config: NodeConfig,
     peers: Peers,
     conns: TcpBroker,
 }
 
-impl TcpOnlyNode {
+impl TcpNode {
     pub fn from_config(config: NodeConfig) -> Self {
         netzwerk::init();
 
@@ -71,7 +67,7 @@ fn main() {
         .with_peer("tcp://localhost:1339")
         .build();
 
-    let mut node = TcpOnlyNode::from_config(config);
+    let mut node = TcpNode::from_config(config);
     logger::info(&format!("Created node <<{}>>", node.id()));
 
     node.run();
