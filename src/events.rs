@@ -38,8 +38,8 @@ pub enum Event {
 }
 
 pub type EventRx = mpmc::Receiver<Event>;
-pub type EventTx = mpmc::Sender<Event>;
+pub type EventChannel = mpmc::Sender<Event>;
 
-pub fn channel() -> (EventTx, EventRx) {
+pub fn channel() -> (EventChannel, EventRx) {
     mpmc::unbounded()
 }
