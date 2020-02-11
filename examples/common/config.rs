@@ -1,15 +1,32 @@
+use super::args::Args;
+
 use netzwerk::{Address, Peer, Peers, Protocol, Url};
 use netzwerk::util;
 
 use async_std::net::ToSocketAddrs;
+use structopt::StructOpt;
 
 pub struct NodeConfig {
     pub id: String,
-    pub host: Address,
+    pub binding_addr: Address,
     peers: Vec<Url>,
 }
 
 impl NodeConfig {
+    pub fn from_args() -> Self {
+        let args = Args::from_args();
+        let mut peers = vec![];
+        for peer in &args.peers {
+            peers.push(Url::from_url_str(&peer));
+        }
+
+        Self {
+            id: args.id,
+            binding_addr: Address::new(args.bind),
+            peers,
+        }
+    }
+
     pub fn builder() -> NodeConfigBuilder {
         NodeConfigBuilder::new()
     }
@@ -21,11 +38,16 @@ impl NodeConfig {
         }
         peers
     }
+
+    pub fn binding_address(&self) -> Address {
+        //Address::
+        unimplemented!()
+    }
 }
 
 pub struct NodeConfigBuilder {
     id: Option<String>,
-    host: Option<Address>,
+    binding_addr: Option<Address>,
     peers: Vec<Url>,
 }
 
@@ -33,7 +55,7 @@ impl NodeConfigBuilder {
     pub fn new() -> Self {
         Self {
             id: None,
-            host: None,
+            binding_addr: None,
             peers: vec![],
         }
     }
@@ -43,9 +65,9 @@ impl NodeConfigBuilder {
         self
     }
 
-    pub fn with_host_binding(mut self, host_addr: impl ToSocketAddrs) -> Self {
-        let host = util::to_single_socket_address(host_addr);
-        self.host.replace(Address::Socket(host));
+    pub fn with_binding(mut self, binding_addr: impl ToSocketAddrs) -> Self {
+        let binding_addr = util::to_single_socket_address(binding_addr);
+        self.binding_addr.replace(Address::Socket(binding_addr));
         self
     }
 
@@ -58,7 +80,7 @@ impl NodeConfigBuilder {
     pub fn build(self) -> NodeConfig {
         NodeConfig {
             id: self.id.unwrap_or(Address::new("localhost:1337").port().to_string()),
-            host: self.host.unwrap_or(Address::new("localhost:1337")),
+            binding_addr: self.binding_addr.unwrap_or(Address::new("localhost:1337")),
             peers: self.peers,
         }
     }

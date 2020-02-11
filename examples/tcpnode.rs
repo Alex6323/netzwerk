@@ -2,7 +2,12 @@
 //! You might want to run several instances of such a node in separate
 //! terminals and connect those instances by specifying commandline arguments.
 //!
-//! Run it with `cargo r --example tcpnode`
+//! To set up a node id'ed with "A" listening at `localhost:1337` and with
+//! two peers located on localhost 1338, 1339 pass this to `cargo`:
+//!
+//! ```bash
+//! cargo r --example tcpnode -- --id A --bind localhost:1337 --peers tcp://localhost:1338 tcp://localhost:1339
+//! ```
 
 use netzwerk::{Address, Peer, Peers, Connections, Message, Protocol, Tcp, Udp, TcpBroker};
 use netzwerk::log::*;
@@ -57,15 +62,10 @@ impl TcpNode {
 }
 
 fn main() {
+    let config = NodeConfig::from_args();
+
     logger::init(log::LevelFilter::Debug);
     screen::init();
-
-    let config = NodeConfig::builder()
-        .with_identifier("A")
-        .with_host_binding("localhost:1337")
-        .with_peer("tcp://localhost:1338")
-        .with_peer("tcp://localhost:1339")
-        .build();
 
     let mut node = TcpNode::from_config(config);
     logger::info(&format!("Created node <<{}>>", node.id()));
