@@ -6,6 +6,7 @@ use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6,
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Address {
     Ip(SocketAddr),
+    Other(()),
 }
 
 impl Address {

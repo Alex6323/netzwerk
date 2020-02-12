@@ -1,8 +1,7 @@
 pub use address::{Address, Url};
 pub use connections::{Connection, Connections, Protocol};
-pub use commands::{Command, CommandSender, CommandReceiver};
 pub use config::{Config, ConfigBuilder};
-pub use events::{Event, EventChannel};
+pub use events::{Event, EventProducer};
 pub use message::Message;
 pub use peers::{Peer, PeerId, Peers};
 pub use log;
@@ -16,34 +15,54 @@ pub mod udp;
 mod address;
 mod config;
 mod connections;
-mod commands;
 mod events;
 mod message;
 mod peers;
 
 use connections as conns;
 
+use async_std::prelude::*;
+use async_std::{task, task::JoinHandle};
 use log::*;
+use std::time::Duration;
 
-pub fn init(config: Config) -> EventChannel {
+/// Initializes the networking layer using a config, and returns a `CommandSender`
+/// for the user to interact with the system.
+pub fn init(config: Config) -> (EventProducer, Vec<JoinHandle<()>>) {
+    debug!("Initializing network layer");
 
-    debug!("'netzwerk' initializing");
+    if config.peers().num() == 0 {
+        warn!("No static peers from config.");
+    };
 
-    bind_tcp_listener();
-    bind_udp_socket();
+    let (event_prod, event_cons) = events::channel();
 
-    let (event_chan, event_rx) = events::channel();
+    let socket_addr = if let Address::Ip(socket_addr) = config.binding_addr {
+        socket_addr
+    } else {
+        error!("Other address types than IP addresses are currently not supported.");
+        panic!("wrong address type");
+    };
 
-    conns::start_el(event_rx.clone());
-    peers::start_el(event_rx.clone());
+    let mut handles = vec![];
 
-    event_chan
+    handles.push(task::spawn(conns::start_loop(event_cons.clone())));
+    handles.push(task::spawn(peers::start_loop(event_cons.clone())));
+    // TEMP?
+    task::block_on(async {
+        task::sleep(Duration::from_millis(500)).await;
+    });
+    handles.push(task::spawn(tcp::init(socket_addr, event_prod.clone())));
+    handles.push(task::spawn(udp::init(socket_addr, event_prod.clone())));
+    // TEMP?
+    task::block_on(async {
+        task::sleep(Duration::from_millis(500)).await;
+    });
+
+    (event_prod, handles)
 }
 
-fn bind_tcp_listener() {
-    // TODO
-}
-
-fn bind_udp_socket() {
-    // TODO
+///
+pub fn exit() {
+    // TODO: make sure to drop the remaining `EventProducer` channels for a graceful shutdown.
 }

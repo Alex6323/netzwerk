@@ -1,5 +1,5 @@
 use crate::error;
-use crate::events::{Event, EventRx};
+use crate::events::{Event, EventReceiver};
 use crate::result;
 use crate::peers::PeerId;
 use crate::tcp::TcpConnection;
@@ -7,43 +7,51 @@ use crate::udp::UdpConnection;
 
 use std::collections::HashMap;
 
-use async_std::task;
 use async_trait::async_trait;
 use bytes::Bytes;
+use log::*;
 
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
 
-/// Starts the event loop.
-pub fn start_el(event_rx: EventRx) {
+/// Starts the command loop.
+pub async fn start_loop(event_receiver: EventReceiver) {
+    debug!("Starting connections processor");
+
     let mut tcp_conns = Connections::new();
     let mut udp_conns = Connections::new();
 
-    task::spawn(async move {
-        while let Ok(event) = event_rx.recv() {
-            match event {
-                Event::NewTcpConnection { peer_id, stream } => tcp_conns.insert(peer_id, TcpConnection::new(stream)),
-                Event::DropTcpConnection { peer_id } => tcp_conns.remove(&peer_id),
-                Event::NewUdpConnection { peer_id, address, socket } => {
-                    udp_conns.insert(peer_id, UdpConnection::new(socket, address.socket_addr().unwrap()))
-                },
-                Event::BroadcastMessage { bytes } => {
-                    // FIXME: error handling
-                    tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
-                    udp_conns.broadcast(bytes).await.expect("error broadcasting message using UDP");
-                }
-                Event::SendMessage { peer_id, bytes } => {
-                    // FIXME: error handling
-                    if let Some(conn) = tcp_conns.get_mut(&peer_id) {
-                        conn.send(bytes).await.expect("error sending message using TCP");
-                    } else if let Some(conn) = udp_conns.get_mut(&peer_id) {
-                        conn.send(bytes).await.expect("error sending message using UDP");
-                    }
-                }
-                Event::Shutdown => break,
-                _ => (),
+    while let Ok(event) = event_receiver.recv() {
+        debug!("(Conns) new event received: {:?}", event);
+
+        match event {
+            Event::AddTcpConnection { peer_id, stream } => tcp_conns.insert(peer_id, TcpConnection::new(stream)),
+            Event::DropTcpConnection { peer_id } => tcp_conns.remove(&peer_id),
+            Event::AddUdpConnection { peer_id, address, socket } => {
+                udp_conns.insert(peer_id, UdpConnection::new(socket, address.socket_addr().unwrap()))
+            },
+            Event::DropUdpConnection { peer_id } => udp_conns.remove(&peer_id),
+            Event::BroadcastMessage { bytes } => {
+                // FIXME: error handling
+                tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
+                udp_conns.broadcast(bytes).await.expect("error broadcasting message using UDP");
             }
+            Event::SendMessage { peer_id, bytes } => {
+                // FIXME: error handling
+                if let Some(conn) = tcp_conns.get_mut(&peer_id) {
+                    conn.send(bytes).await.expect("error sending message using TCP");
+                } else if let Some(conn) = udp_conns.get_mut(&peer_id) {
+                    conn.send(bytes).await.expect("error sending message using UDP");
+                }
+            }
+            Event::Shutdown => break,
+            _ => (),
         }
-    });
+    }
+
+    debug!("Exited conns event loop");
+    drop(event_receiver);
+    drop(tcp_conns);
+    drop(udp_conns);
 }
 
 #[async_trait]

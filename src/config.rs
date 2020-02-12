@@ -27,11 +27,6 @@ impl Config {
         }
         peers
     }
-
-    pub fn binding_address(&self) -> Address {
-        //Address::
-        unimplemented!()
-    }
 }
 
 pub struct ConfigBuilder {

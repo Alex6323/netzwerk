@@ -1,31 +1,37 @@
 use crate::address::Url;
 use crate::connections::Protocol;
-use crate::events::{Event, EventRx};
+use crate::events::{Event, EventReceiver};
 
-use async_std::task;
 use async_std::net::SocketAddr;
+use log::*;
 
 use std::collections::HashMap;
 use std::ops;
 
 /// Starts the event loop.
-pub fn start_el(event_rx: EventRx) {
+pub async fn start_loop(event_receiver: EventReceiver) {
+    debug!("Starting peers processor");
+
     let mut peers = Peers::new();
 
-    task::spawn(async move {
-        while let Ok(event) = event_rx.recv() {
-            match event {
-                Event::NewPeer { peer } => peers.add(peer),
-                Event::DropPeer { peer_id } => peers.remove(&peer_id),
-                Event::Shutdown => break,
-                _ => (),
-            }
+    // NOTE: this loop exits when all event producers have been dropped
+    while let Ok(event) = event_receiver.recv() {
+        debug!("(Peers) new event received: {:?}", event);
+
+        match event {
+            Event::AddPeer { peer } => peers.add(peer),
+            Event::DropPeer { peer_id } => peers.remove(&peer_id),
+            Event::Shutdown => break,
+            _ => (),
         }
-    });
+    }
+
+    debug!("Exited peers event loop");
+    drop(event_receiver);
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct PeerId(SocketAddr);
+pub struct PeerId(pub(crate) SocketAddr);
 
 impl From<Url> for PeerId {
     fn from(url: Url) -> Self {

@@ -12,8 +12,7 @@
 use netzwerk::{
     Config, ConfigBuilder,
     Connections,
-    Command, CommandReceiver, CommandSender,
-    Event, EventChannel,
+    Event, EventProducer,
     log::*,
     Message,
     Peer, PeerId,
@@ -30,7 +29,7 @@ mod common;
 
 struct Node {
     config: Config,
-    event_chan: EventChannel,
+    event_prod: EventProducer,
 }
 
 impl Node {
@@ -40,24 +39,43 @@ impl Node {
     }
 
     pub fn add_peer(&self, peer: Peer) {
-        self.event_chan.send(Event::NewPeer { peer }).expect("error sending NewPeer event");
+        self.event_prod.send(Event::AddPeer { peer }).expect("error sending NewPeer event");
     }
 
     pub fn drop_peer(&self, peer_id: PeerId) {
-        self.event_chan.send(Event::DropPeer { peer_id }).expect("error sending DropPeer event");
+        self.event_prod.send(Event::DropPeer { peer_id }).expect("error sending DropPeer event");
     }
 
-    pub fn shutdown(&self) {
-        self.event_chan.send(Event::Shutdown).expect("error sending Shutdown event");
+    pub fn wait(&self, handles: Vec<task::JoinHandle<()>>) {
+        debug!("Waiting for async tasks to finish...");
+        /*
+        task::block_on(async {
+            task::sleep(Duration::from_millis(5000)).await;
+        });
+        */
+    }
+
+    pub fn shutdown(self, handles: Vec<task::JoinHandle<()>>) {
+        debug!("Shutting down...");
+
+        self.event_prod.send(Event::Shutdown).expect("error sending Shutdown event");
+
+        drop(self.event_prod);
+
+        task::block_on(async {
+            for handle in handles {
+                handle.await;
+            }
+        })
     }
 
     pub fn send_msg(&self, message: impl Message, peer_id: PeerId) {
-        self.event_chan.send(Event::SendMessage { bytes: message.into_bytes(), peer_id })
+        self.event_prod.send(Event::SendMessage { bytes: message.into_bytes(), peer_id })
             .expect("error sending SendMessage event");
     }
 
     pub fn broadcast_msg(&self, message: impl Message) {
-        self.event_chan.send(Event::BroadcastMessage { bytes: message.into_bytes() })
+        self.event_prod.send(Event::BroadcastMessage { bytes: message.into_bytes() })
             .expect("error sending BroadcastMessage event");
     }
 
@@ -68,14 +86,14 @@ impl Node {
 
 struct NodeBuilder {
     config: Option<Config>,
-    event_chan: Option<EventChannel>,
+    event_prod: Option<EventProducer>,
 }
 
 impl NodeBuilder {
     pub fn new() -> Self {
         Self {
             config: None,
-            event_chan: None,
+            event_prod: None,
         }
     }
 
@@ -84,15 +102,15 @@ impl NodeBuilder {
         self
     }
 
-    pub fn with_event_chan(mut self, event_chan: EventChannel) -> Self {
-        self.event_chan.replace(event_chan);
+    pub fn with_event_prod(mut self, event_chan: EventProducer) -> Self {
+        self.event_prod.replace(event_chan);
         self
     }
 
     pub fn build(self) -> Node {
         Node {
             config: self.config.expect("NodeBuilder: no config specified"),
-            event_chan: self.event_chan.expect("NodeBuilder: no event channel specified"),
+            event_prod: self.event_prod.expect("NodeBuilder: no event channel specified"),
         }
     }
 }
@@ -101,13 +119,13 @@ fn main() {
     let config: Config = args::Args::from_args().into();
 
     logger::init(log::LevelFilter::Debug);
-    screen::init();
+    //screen::init();
 
-    let event_chan = netzwerk::init(config.clone());
+    let (event_prod, handles) = netzwerk::init(config.clone());
 
     let node = Node::builder()
         .with_config(config)
-        .with_event_chan(event_chan)
+        .with_event_prod(event_prod)
         .build();
 
     logger::info(&format!("Created node <<{}>>", node.id()));
@@ -115,6 +133,11 @@ fn main() {
     let msg = Utf8Message::new("hello netzwerk");
     node.broadcast_msg(msg);
 
-    std::thread::sleep(std::time::Duration::from_millis(3000));
-    screen::exit();
+    std::thread::sleep(std::time::Duration::from_millis(5000));
+
+    node.shutdown(handles);
+
+    netzwerk::exit();
+
+    //screen::exit();
 }

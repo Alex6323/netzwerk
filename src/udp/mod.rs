@@ -1,9 +1,22 @@
 use crate::connections::{Connection, MAX_BUFFER_SIZE, NetIO};
+use crate::events::{Event, EventProducer};
+use crate::peers::PeerId;
 use crate::result;
 
 use async_std::net::{UdpSocket, SocketAddr};
+use async_std::prelude::*;
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
+use log::*;
+
+pub async fn init(binding_addr: SocketAddr, event_prod: EventProducer) {
+    let socket = UdpSocket::bind(binding_addr).await.expect("error binding UDP socket");
+    debug!("Successfully bound UDP socket to <<{}>>",
+        socket.local_addr().expect("error reading local address from UDP socket"));
+    debug!("Starting udp processor");
+    // TODO: send UdpSocketBound message
+    debug!("Exited udp processor");
+}
 
 pub struct Udp {
     bound_socket: UdpSocket,
