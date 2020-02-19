@@ -1,62 +1,111 @@
 use crate::address::Address;
 use crate::peers::{Peer, PeerId};
 
-use std::fmt;
+use std::{fmt, ops};
 
 use async_std::net::{TcpStream, UdpSocket};
-use bytes::Bytes;
+use async_std::sync::Arc;
 use crossbeam_channel as mpmc;
 
-pub enum Event {
-    AddPeer {
+const EVENT_CHAN_CAPACITY: usize = 10000;
+
+#[derive(Clone, Debug)]
+pub struct Event(Arc<EventType>);
+
+/// This Enum holds all events in the networking layer.
+pub enum EventType {
+
+    /// Raised when a peer was added. The layer will try to connect/reconnect to that peer.
+    PeerAdded {
         peer: Peer
     },
-    DropPeer {
+
+    /// Raised when a peer was removed. No further attempts will be made to connect to that peer.
+    PeerRemoved {
         peer_id: PeerId
     },
-    AddTcpConnection {
+
+    /// Raised when a new TCP connection is established.
+    TcpConnectionEstablished {
         peer_id: PeerId,
         stream: TcpStream
     },
-    DropTcpConnection {
+
+    /// Raised when a TCP connection has been dropped.
+    TcpConnectionDropped {
         peer_id: PeerId,
     },
-    AddUdpConnection {
+
+    /// Raised when a new UDP connection is established.
+    UdpConnectionEstablished {
         peer_id: PeerId,
         address: Address,
         socket: UdpSocket,
     },
-    DropUdpConnection {
+
+    /// Raised when a UDP connection has been dropped.
+    UdpConnectionDropped {
         peer_id: PeerId,
     },
-    SendMessage {
-        peer_id: PeerId,
-        bytes: Bytes,
+
+    /// Raised when a message has been sent.
+    MessageSent {
+        num_bytes: usize,
+        receiver_addr: Address,
     },
-    BroadcastMessage {
-        bytes: Bytes,
+
+    /// Raised when a messge has been sent to all peers.
+    MessageBroadcasted {
+        num_bytes: usize,
     },
+
+    /// Raised when a message has been received.
+    MessageReceived {
+        num_bytes: usize,
+        sender_addr: Address,
+        bytes: Vec<u8>,
+    },
+
+    /// Raised when the system has been commanded to shutdown.
     Shutdown,
 }
 
-impl fmt::Debug for Event {
+impl ops::Deref for Event {
+    type Target = EventType;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
+}
+
+impl From<EventType> for Event {
+    fn from(t: EventType) -> Self {
+        Self(Arc::new(t))
+    }
+}
+
+impl fmt::Debug for EventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Event::AddPeer { peer } => write!(f, "AddPeer <<{:?}>>", peer.id()),
-            Event::DropPeer { peer_id } => write!(f, "DropPeer <<{:?}>>", peer_id),
-            Event::AddTcpConnection { peer_id, .. } => write!(f, "AddTcpConnection <<{:?}>>", peer_id),
-            Event::DropTcpConnection { peer_id } => write!(f, "DropTcpConnection <<{:?}>>", peer_id),
-            Event::AddUdpConnection { peer_id, .. } => write!(f, "AddUdpConnection <<{:?}>>", peer_id),
-            Event::DropUdpConnection { peer_id } => write!(f, "DropUdpConnection <<{:?}>>", peer_id),
-            Event::SendMessage { peer_id, bytes } => write!(f, "SendMessage <<{:?}>>, <<{} bytes>>", peer_id, bytes.len()),
-            Event::BroadcastMessage { bytes } => write!(f, "BroadcastMessage <<{} bytes>>", bytes.len()),
-            Event::Shutdown => write!(f, "Shutdown"),
+            EventType::PeerAdded { peer } => write!(f, "AddPeer <<{:?}>>", peer.id()),
+            EventType::PeerRemoved { peer_id } => write!(f, "DropPeer <<{:?}>>", peer_id),
+            EventType::TcpConnectionEstablished { peer_id, .. } => write!(f, "AddTcpConnection <<{:?}>>", peer_id),
+            EventType::TcpConnectionDropped { peer_id } => write!(f, "DropTcpConnection <<{:?}>>", peer_id),
+            EventType::UdpConnectionEstablished { peer_id, .. } => write!(f, "AddUdpConnection <<{:?}>>", peer_id),
+            EventType::UdpConnectionDropped { peer_id } => write!(f, "DropUdpConnection <<{:?}>>", peer_id),
+            /*
+            EventType::MessageSent { peer_id, bytes } => write!(f, "SendMessage <<{:?}>>, <<{} bytes>>", peer_id, bytes.len()),
+            EventType::MessageReceived { bytes } => write!(f, "BroadcastMessage <<{} bytes>>", bytes.len()),
+            */
+            EventType::Shutdown => write!(f, "Shutdown"),
+            _ => Ok(()),
         }
     }
 }
-pub type EventProducer = mpmc::Sender<Event>;
-pub type EventReceiver = mpmc::Receiver<Event>;
 
-pub fn channel() -> (EventProducer, EventReceiver) {
-    mpmc::unbounded::<Event>()
+pub type EventSource = mpmc::Sender<Event>;
+pub type EventSink = mpmc::Receiver<Event>;
+
+pub fn channel() -> (EventSource, EventSink) {
+    mpmc::bounded::<Event>(EVENT_CHAN_CAPACITY)
 }

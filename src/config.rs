@@ -2,7 +2,7 @@
 
 use crate::address::{Address, Url};
 use crate::peers::{Peer, Peers};
-use crate::util;
+use crate::utils;
 
 use async_std::net::ToSocketAddrs;
 //use structopt::StructOpt;
@@ -50,7 +50,7 @@ impl ConfigBuilder {
     }
 
     pub fn with_binding(mut self, binding_addr: impl ToSocketAddrs) -> Self {
-        let binding_addr = util::to_single_socket_address(binding_addr);
+        let binding_addr = utils::to_single_socket_address(binding_addr);
         self.binding_addr.replace(Address::Ip(binding_addr));
         self
     }

@@ -1,8 +1,8 @@
 use netzwerk::Message;
-use netzwerk::error;
+use netzwerk::errors;
 use netzwerk::result;
 
-use bytes::Bytes;
+use std::ops;
 
 pub struct Utf8Message {
     data: String,
@@ -17,13 +17,20 @@ impl Utf8Message {
 }
 
 impl Message for Utf8Message {
-    fn from_bytes(bytes: Bytes) -> result::Result<Self> {
+    fn size_range() -> ops::Range<usize>
+    where
+        Self: Sized
+    {
+        0..100
+    }
+
+    fn from_bytes(bytes: &[u8]) -> result::MessageResult<Self> {
         Ok(Self {
             data: String::from_utf8(bytes.to_vec()).unwrap(),
         })
     }
 
-    fn into_bytes(&self) -> Bytes {
-        Bytes::from(Vec::from(self.data.as_bytes()))
+    fn as_bytes(&self) -> Vec<u8> {
+        Vec::from(self.data.as_bytes())
     }
 }

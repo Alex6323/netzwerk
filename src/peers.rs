@@ -1,6 +1,7 @@
 use crate::address::Url;
-use crate::connections::Protocol;
-use crate::events::{Event, EventReceiver};
+use crate::conns::Protocol;
+use crate::events::{EventSource, EventType};
+use crate::commands::{CommandType, CommandReceiver};
 
 use async_std::net::SocketAddr;
 use log::*;
@@ -8,26 +9,60 @@ use log::*;
 use std::collections::HashMap;
 use std::ops;
 
-/// Starts the event loop.
-pub async fn start_loop(event_receiver: EventReceiver) {
-    debug!("Starting peers processor");
+///
+pub async fn listen(command_rx: CommandReceiver, event_source: EventSource) {
+    debug!("Start listening to peer changes");
 
     let mut peers = Peers::new();
 
-    // NOTE: this loop exits when all event producers have been dropped
-    while let Ok(event) = event_receiver.recv() {
-        debug!("(Peers) new event received: {:?}", event);
+    while let Ok(command) = command_rx.recv() {
+        debug!("New peer command received: {:?}", command);
 
-        match event {
-            Event::AddPeer { peer } => peers.add(peer),
-            Event::DropPeer { peer_id } => peers.remove(&peer_id),
-            Event::Shutdown => break,
+        match &*command {
+            CommandType::AddPeer { peer } => {
+                peers.add(peer.clone());
+                event_source.send(EventType::PeerAdded { peer: peer.clone() }.into());
+
+                // start (re)connecting task for that new peer
+
+                /*
+                peer.set_state(PeerState::Connecting);
+                match peer.protocol() {
+                    Protocol::Tcp => {
+                        if let Url::Tcp(peer_addr) = peer.url {
+                            let stream = TcpStream::connect(peer_addr)
+                                .await
+                                .expect(&format!("error connecting to peer <<{:?}>>", peer_addr));
+
+                                let peer_id = PeerId(stream.peer_addr()
+                                    .expect("error unwrapping remote address from TCP stream"));
+
+                                event_prod.send(Event::AddTcpConnection { peer_id, stream }).expect("error sending NewTcpConnection event");
+
+                        }
+
+                    },
+                    Protocol::Udp => {
+                        // TODO
+                    }
+                }
+                */
+            },
+            CommandType::RemovePeer { peer_id } => {
+                peers.remove(&peer_id);
+
+                event_source.send(EventType::PeerRemoved { peer_id: peer_id.clone() }.into());
+            },
+            CommandType::Shutdown => {
+                drop(peers);
+                event_source.send(EventType::Shutdown {}.into());
+                break
+            }
             _ => (),
         }
     }
 
-    debug!("Exited peers event loop");
-    drop(event_receiver);
+    debug!("Peer listener stops listening");
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -43,6 +78,7 @@ impl From<Url> for PeerId {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Peer {
     /// The ID of the peer to recognize it across connections.
     id: PeerId,
@@ -79,6 +115,10 @@ impl Peer {
 
     pub fn is_idle(&self) -> bool {
         self.state.idle()
+    }
+
+    pub fn set_state(&mut self, new_state: PeerState) {
+        self.state = new_state;
     }
 }
 
@@ -119,7 +159,7 @@ impl ops::Deref for Peers {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PeerState {
     /// We are not connected to that peer.
     NotConnected,

@@ -1,5 +1,5 @@
-use crate::connections::Protocol;
-use crate::util;
+use crate::conns::Protocol;
+use crate::utils;
 
 use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
 
@@ -11,7 +11,7 @@ pub enum Address {
 
 impl Address {
     pub fn new(addr: impl ToSocketAddrs) -> Self {
-        let addr = util::to_single_socket_address(addr);
+        let addr = utils::to_single_socket_address(addr);
         Address::Ip(addr)
     }
 
@@ -62,7 +62,7 @@ impl Url {
     // TODO: `impl ToSocketAddrs` won't be enough for other protocols. We'll probably have to resort
     // to `&str` eventually.
     pub fn new(addr: impl ToSocketAddrs, proto: Protocol) -> Self {
-        let address = util::to_single_socket_address(addr);
+        let address = utils::to_single_socket_address(addr);
 
         match proto {
             Protocol::Tcp => Url::Tcp(address),

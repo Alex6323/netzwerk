@@ -1,12 +1,10 @@
 use crate::connections::{Connection, MAX_BUFFER_SIZE, NetIO};
-use crate::events::{Event, EventProducer};
-use crate::peers::PeerId;
+use crate::events::EventProducer;
 use crate::result;
 
 use async_std::net::{UdpSocket, SocketAddr};
-use async_std::prelude::*;
+use async_std::task;
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
 use log::*;
 
 pub async fn init(binding_addr: SocketAddr, event_prod: EventProducer) {
@@ -32,17 +30,16 @@ impl Udp {
 #[async_trait]
 impl NetIO for Udp {
 
-    async fn send(&mut self, bytes: Bytes) -> result::Result<()> {
-        self.bound_socket.send_to(&bytes, &self.peer_address)
-        .await
-        .expect("error sending bytes using UDP");
+    async fn send(&mut self, bytes: Vec<u8>) -> result::MessageResult<usize> {
+        let nb = self.bound_socket.send_to(&bytes, &self.peer_address).await?;
 
-        Ok(())
+        Ok(nb)
     }
 
-    async fn recv(&mut self) -> result::Result<Bytes> {
-        let mut buffer = BytesMut::with_capacity(MAX_BUFFER_SIZE);
-        let (_n, peer_address) = self.bound_socket.recv_from(&mut buffer).await?;
+    async fn recv(&mut self) -> result::MessageResult<Vec<u8>> {
+        let mut buffer = vec![0u8; MAX_BUFFER_SIZE];
+
+        let (nb, peer_address) = self.bound_socket.recv_from(&mut buffer).await?;
 
         if peer_address != self.peer_address {
             // NOTE: not sure if this makes sense.

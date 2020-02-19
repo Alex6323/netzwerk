@@ -4,11 +4,14 @@ version = "0.1.0"
 authors = ["/alex/ <Al3k5@protonmail.com>"]
 edition = "2018"
 
+[features]
+# async version that uses async mpmc channels
+# sync version that uses sync crossbeam channels
+
 [dependencies]
 async-std = "1.5.0"
 async-trait = "0.1.24"
 bincode = "1.2.1"
-bytes = { version = "0.5.4", features = ["serde"] }
 crossbeam-channel = "0.4.0"
 err-derive = "0.2.2"
 futures = "0.3.4"
