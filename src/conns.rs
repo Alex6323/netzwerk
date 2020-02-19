@@ -27,12 +27,12 @@ pub async fn listen(command_rx: CommandReceiver, event_source: EventSource) {
                 // when removing the connections associated sockets will be closed automatically (RAII)
                 let was_removed = tcp_conns.remove(&peer_id);
                 if was_removed {
-                    event_source.send(EventType::TcpConnectionDropped { peer_id: *peer_id }.into());
+                    event_source.send(EventType::TcpPeerDisconnected { peer_id: *peer_id }.into());
                 }
 
                 let was_removed = udp_conns.remove(&peer_id);
                 if was_removed {
-                    event_source.send(EventType::UdpConnectionDropped { peer_id: *peer_id }.into());
+                    event_source.send(EventType::UdpPeerDisconnected { peer_id: *peer_id }.into());
                 }
 
             },
@@ -139,6 +139,16 @@ impl<R: NetIO> Connections<R> {
 pub enum Protocol {
     Tcp,
     Udp,
+}
+
+impl Protocol {
+    pub fn is_tcp(&self) -> bool {
+        *self == Protocol::Tcp
+    }
+
+    pub fn is_udp(&self) -> bool {
+        *self == Protocol::Udp
+    }
 }
 
 impl From<&str> for Protocol {

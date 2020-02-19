@@ -25,17 +25,18 @@ use async_std::task;
 use log::*;
 use std::time::Duration;
 
-/// Initializes the networking layer using a config, and returns a `CommandSender`
-/// for the user to interact with the system.
+/// Initializes the networking layer using a config, and returns a `Controller`
+/// for the user to interact with the system, and an `EventSink` to receive
+/// all events.
 pub fn init(config: Config) -> (Controller, EventSink) {
 
     debug!("Initializing network layer");
 
-    let num_static_peers = config.peers().num();
-    if num_static_peers == 0 {
+    let static_peers = config.peers();
+    if static_peers.num() == 0 {
         warn!("No static peers from config found.");
     } else {
-        info!("Found {} static peer(s) in config.", num_static_peers)
+        info!("Found {} static peer(s) in config.", static_peers.num())
     }
 
     let (mut controller, command_receiver) = commands::channel();
@@ -48,11 +49,14 @@ pub fn init(config: Config) -> (Controller, EventSink) {
         panic!("wrong address type");
     };
 
+    // TODO: make those channel halfs `Copy` so the code becomes more readable!
+
     controller.add_task(task::spawn(conns::listen(command_receiver.clone(), event_source.clone())));
-    controller.add_task(task::spawn(peers::listen(command_receiver.clone(), event_source.clone())));
+    controller.add_task(task::spawn(peers::listen(static_peers, command_receiver.clone(), event_source.clone())));
     wait(500);
 
     controller.add_task(task::spawn(tcp::listen(socket_addr, event_source.clone())));
+    controller.add_task(task::spawn(tcp::connect(event_sink.clone(), event_source.clone())));
     wait(500);
 
     (controller, event_sink)

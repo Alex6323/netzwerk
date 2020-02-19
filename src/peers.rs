@@ -10,10 +10,8 @@ use std::collections::HashMap;
 use std::ops;
 
 ///
-pub async fn listen(command_rx: CommandReceiver, event_source: EventSource) {
+pub async fn listen(mut peers: Peers, command_rx: CommandReceiver, event_source: EventSource) {
     debug!("Start listening to peer changes");
-
-    let mut peers = Peers::new();
 
     while let Ok(command) = command_rx.recv() {
         debug!("New peer command received: {:?}", command);
@@ -22,31 +20,6 @@ pub async fn listen(command_rx: CommandReceiver, event_source: EventSource) {
             CommandType::AddPeer { peer } => {
                 peers.add(peer.clone());
                 event_source.send(EventType::PeerAdded { peer: peer.clone() }.into());
-
-                // start (re)connecting task for that new peer
-
-                /*
-                peer.set_state(PeerState::Connecting);
-                match peer.protocol() {
-                    Protocol::Tcp => {
-                        if let Url::Tcp(peer_addr) = peer.url {
-                            let stream = TcpStream::connect(peer_addr)
-                                .await
-                                .expect(&format!("error connecting to peer <<{:?}>>", peer_addr));
-
-                                let peer_id = PeerId(stream.peer_addr()
-                                    .expect("error unwrapping remote address from TCP stream"));
-
-                                event_prod.send(Event::AddTcpConnection { peer_id, stream }).expect("error sending NewTcpConnection event");
-
-                        }
-
-                    },
-                    Protocol::Udp => {
-                        // TODO
-                    }
-                }
-                */
             },
             CommandType::RemovePeer { peer_id } => {
                 peers.remove(&peer_id);
@@ -97,7 +70,7 @@ impl Peer {
         self.id
     }
 
-    pub fn address(&self) -> &Url {
+    pub fn url(&self) -> &Url {
         &self.url
     }
 

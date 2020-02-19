@@ -17,34 +17,44 @@ pub enum EventType {
 
     /// Raised when a peer was added. The layer will try to connect/reconnect to that peer.
     PeerAdded {
-        peer: Peer
+        peer: Peer,
     },
 
     /// Raised when a peer was removed. No further attempts will be made to connect to that peer.
     PeerRemoved {
+        peer_id: PeerId,
+    },
+
+    /// Raised when a tcp peer is connected (again).
+    TcpPeerConnected {
+        peer_id: PeerId,
+        stream: TcpStream,
+    },
+
+    /// Raised when a tcp peer is disconnected.
+    TcpPeerDisconnected {
         peer_id: PeerId
     },
 
-    /// Raised when a new TCP connection is established.
-    TcpConnectionEstablished {
-        peer_id: PeerId,
-        stream: TcpStream
-    },
-
-    /// Raised when a TCP connection has been dropped.
-    TcpConnectionDropped {
-        peer_id: PeerId,
-    },
-
     /// Raised when a new UDP connection is established.
-    UdpConnectionEstablished {
+    UdpPeerConnected {
         peer_id: PeerId,
         address: Address,
         socket: UdpSocket,
     },
 
     /// Raised when a UDP connection has been dropped.
-    UdpConnectionDropped {
+    UdpPeerDisconnected {
+        peer_id: PeerId,
+    },
+
+    /// Raised when no packet was received from this TCP peer for some time.
+    TcpPeerUnresponsive {
+        peer_id: PeerId,
+    },
+
+    /// Raised when no packet was received from this UDP peer for some time.
+    UdpPeerUnresponsive {
         peer_id: PeerId,
     },
 
@@ -87,17 +97,17 @@ impl From<EventType> for Event {
 impl fmt::Debug for EventType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EventType::PeerAdded { peer } => write!(f, "AddPeer <<{:?}>>", peer.id()),
-            EventType::PeerRemoved { peer_id } => write!(f, "DropPeer <<{:?}>>", peer_id),
-            EventType::TcpConnectionEstablished { peer_id, .. } => write!(f, "AddTcpConnection <<{:?}>>", peer_id),
-            EventType::TcpConnectionDropped { peer_id } => write!(f, "DropTcpConnection <<{:?}>>", peer_id),
-            EventType::UdpConnectionEstablished { peer_id, .. } => write!(f, "AddUdpConnection <<{:?}>>", peer_id),
-            EventType::UdpConnectionDropped { peer_id } => write!(f, "DropUdpConnection <<{:?}>>", peer_id),
-            /*
-            EventType::MessageSent { peer_id, bytes } => write!(f, "SendMessage <<{:?}>>, <<{} bytes>>", peer_id, bytes.len()),
-            EventType::MessageReceived { bytes } => write!(f, "BroadcastMessage <<{} bytes>>", bytes.len()),
-            */
-            EventType::Shutdown => write!(f, "Shutdown"),
+            EventType::PeerAdded { peer } => write!(f, "Peer added: {:?}", peer.id()),
+            EventType::PeerRemoved { peer_id } => write!(f, "Peer removed: {:?}", peer_id),
+            EventType::TcpPeerConnected { peer_id, .. } => write!(f, "TCP peer connected: {:?}", peer_id),
+            EventType::TcpPeerDisconnected { peer_id } => write!(f, "TCP peer disconnected: {:?}", peer_id),
+            EventType::UdpPeerConnected { peer_id, .. } => write!(f, "UDP peer connected: {:?}", peer_id),
+            EventType::UdpPeerDisconnected { peer_id } => write!(f, "UDP peer disconnected: {:?}", peer_id),
+            EventType::TcpPeerUnresponsive { peer_id, .. } => write!(f, "TCP peer unresponsive: {:?}", peer_id),
+            EventType::UdpPeerUnresponsive { peer_id } => write!(f, "UDP peer unresponsive: {:?}", peer_id),
+            EventType::MessageSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
+            EventType::MessageReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
+            EventType::Shutdown => write!(f, "Shutdown signal received"),
             _ => Ok(()),
         }
     }
