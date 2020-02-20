@@ -2,6 +2,7 @@ use crate::address::Address;
 use crate::peers::{Peer, PeerId};
 
 use std::{fmt, ops};
+use std::time::Duration;
 
 use async_std::net::{TcpStream, UdpSocket};
 use async_std::sync::Arc;
@@ -9,13 +10,14 @@ use crossbeam_channel as mpmc;
 
 const EVENT_CHAN_CAPACITY: usize = 10000;
 
-#[derive(Clone, Debug)]
-pub struct Event(Arc<EventType>);
+//#[derive(Clone, Debug)]
+//pub struct Event(Arc<EventType>);
 
 /// This Enum holds all events in the networking layer.
-pub enum EventType {
+#[derive(Clone)]
+pub enum Event {
 
-    /// Raised when a peer was added. The layer will try to connect/reconnect to that peer.
+    /// Raised when a peer was added. The layer will try to connect to/reconnect with that peer.
     PeerAdded {
         peer: Peer,
     },
@@ -25,37 +27,27 @@ pub enum EventType {
         peer_id: PeerId,
     },
 
-    /// Raised when a tcp peer is connected (again).
-    TcpPeerConnected {
+    /// Raised when a peer is connected or reconnected via TCP.
+    PeerConnectedViaTCP {
         peer_id: PeerId,
-        stream: TcpStream,
+        stream: Arc<TcpStream>,
     },
 
-    /// Raised when a tcp peer is disconnected.
-    TcpPeerDisconnected {
+    /// Raised when a peer is connected or reconnected via UDP.
+    PeerConnectedViaUDP {
+        peer_id: PeerId,
+        address: Address,
+        socket: Arc<UdpSocket>,
+    },
+    /// Raised when a peer was disconnected.
+    PeerDisconnected {
         peer_id: PeerId
     },
 
-    /// Raised when a new UDP connection is established.
-    UdpPeerConnected {
+    /// Raised when no packet was received from this peer for some time.
+    PeerIdle {
         peer_id: PeerId,
-        address: Address,
-        socket: UdpSocket,
-    },
-
-    /// Raised when a UDP connection has been dropped.
-    UdpPeerDisconnected {
-        peer_id: PeerId,
-    },
-
-    /// Raised when no packet was received from this TCP peer for some time.
-    TcpPeerUnresponsive {
-        peer_id: PeerId,
-    },
-
-    /// Raised when no packet was received from this UDP peer for some time.
-    UdpPeerUnresponsive {
-        peer_id: PeerId,
+        duration: Duration,
     },
 
     /// Raised when a message has been sent.
@@ -80,6 +72,7 @@ pub enum EventType {
     Shutdown,
 }
 
+/*
 impl ops::Deref for Event {
     type Target = EventType;
 
@@ -93,21 +86,19 @@ impl From<EventType> for Event {
         Self(Arc::new(t))
     }
 }
+*/
 
-impl fmt::Debug for EventType {
+impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EventType::PeerAdded { peer } => write!(f, "Peer added: {:?}", peer.id()),
-            EventType::PeerRemoved { peer_id } => write!(f, "Peer removed: {:?}", peer_id),
-            EventType::TcpPeerConnected { peer_id, .. } => write!(f, "TCP peer connected: {:?}", peer_id),
-            EventType::TcpPeerDisconnected { peer_id } => write!(f, "TCP peer disconnected: {:?}", peer_id),
-            EventType::UdpPeerConnected { peer_id, .. } => write!(f, "UDP peer connected: {:?}", peer_id),
-            EventType::UdpPeerDisconnected { peer_id } => write!(f, "UDP peer disconnected: {:?}", peer_id),
-            EventType::TcpPeerUnresponsive { peer_id, .. } => write!(f, "TCP peer unresponsive: {:?}", peer_id),
-            EventType::UdpPeerUnresponsive { peer_id } => write!(f, "UDP peer unresponsive: {:?}", peer_id),
-            EventType::MessageSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
-            EventType::MessageReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
-            EventType::Shutdown => write!(f, "Shutdown signal received"),
+            Event::PeerAdded { peer } => write!(f, "Peer added: {:?}", peer.id()),
+            Event::PeerRemoved { peer_id } => write!(f, "Peer removed: {:?}", peer_id),
+            Event::PeerConnectedViaTCP { peer_id, .. } => write!(f, "Peer connected via TCP: {:?}", peer_id),
+            Event::PeerConnectedViaUDP { peer_id, .. } => write!(f, "Peer connected via UDP: {:?}", peer_id),
+            Event::PeerDisconnected { peer_id } => write!(f, "Peer disconnected: {:?}", peer_id),
+            Event::PeerIdle { peer_id, .. } => write!(f, "Peer has been idle: {:?}", peer_id),
+            Event::MessageSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
+            Event::MessageReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
             _ => Ok(()),
         }
     }

@@ -42,8 +42,11 @@ pub fn init(config: Config) -> (Controller, EventSink) {
     let (mut controller, command_receiver) = commands::channel();
     let (event_source, event_sink) = events::channel();
 
-    let socket_addr = if let Address::Ip(socket_addr) = config.binding_addr {
-        socket_addr
+    //TODO: ActorMailbox is Clone & Copy
+    // let mailbox = ActorMailbox::new(command_receiver, event_source, event_sink);
+
+    let binding_addr = if let Address::Ip(binding_addr) = config.binding_addr {
+        binding_addr
     } else {
         error!("Other address types than IP addresses are currently not supported.");
         panic!("wrong address type");
@@ -51,17 +54,23 @@ pub fn init(config: Config) -> (Controller, EventSink) {
 
     // TODO: make those channel halfs `Copy` so the code becomes more readable!
 
-    controller.add_task(task::spawn(conns::listen(command_receiver.clone(), event_source.clone())));
-    controller.add_task(task::spawn(peers::listen(static_peers, command_receiver.clone(), event_source.clone())));
-    wait(500);
 
-    controller.add_task(task::spawn(tcp::listen(socket_addr, event_source.clone())));
-    controller.add_task(task::spawn(tcp::connect(event_sink.clone(), event_source.clone())));
-    wait(500);
+    let actor1 = task::spawn(conns::actor::run(command_receiver.clone(), event_source.clone(), event_sink.clone()));
+    let actor2 = task::spawn(peers::actor::run(command_receiver.clone(), event_source.clone(), event_sink.clone()));
+    wait(500, "wait for 'conns' and 'peers' actors to run.");
+
+    let actor3 = task::spawn(tcp::run(binding_addr, event_source.clone(), event_sink.clone()));
+    wait(500, "wait for 'tcp' actor to run.");
+
+    controller.add_task(actor1);
+    controller.add_task(actor2);
+    controller.add_task(actor3);
+
 
     (controller, event_sink)
 }
 
-fn wait(millis: u64) {
+fn wait(millis: u64, explanation: &str) {
+    info!("{}", explanation);
     task::block_on(task::sleep(Duration::from_millis(millis)));
 }

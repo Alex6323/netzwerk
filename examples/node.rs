@@ -43,7 +43,7 @@ fn main() {
         .with_controller(controller)
         .build();
 
-    logger::info(&format!("Created node <<{}>>", node.id()));
+    logger::info("example", &format!("Created node <<{}>>", node.id()));
 
 
     // TEMP: for 10 seconds broadcast a message each second
@@ -57,7 +57,7 @@ fn main() {
 
 async fn notification_handler(event_sink: EventSink) {
     while let Ok(event) = event_sink.recv() {
-        logger::info(&format!("Received event {:?}", event));
+        logger::info("example", &format!("Received event {:?}", event));
     }
 }
 

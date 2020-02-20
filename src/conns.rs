@@ -1,71 +1,76 @@
 use crate::errors;
-use crate::events::{Event, EventSource, EventType};
-use crate::commands::{CommandReceiver, CommandType};
+use crate::events::Event;
 use crate::result;
 use crate::peers::PeerId;
-use crate::tcp::TcpConnection;
-//use crate::udp::UdpConnection;
+
+use async_trait::async_trait;
 
 use std::collections::HashMap;
 
-use async_trait::async_trait;
-use log::*;
-
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
 
-pub async fn listen(command_rx: CommandReceiver, event_source: EventSource) {
-    debug!("Start listening to connection changes");
+pub mod actor {
+    use super::Connections;
 
-    let mut tcp_conns = Connections::new();
-    let mut udp_conns = Connections::new();
+    use crate::events::{Event, EventSink, EventSource};
+    use crate::commands::{CommandReceiver, CommandType};
 
-    while let Ok(command) = command_rx.recv() {
-        debug!("New connection command received: {:?}", command);
+    use log::*;
 
-        match &*command {
-            CommandType::RemovePeer { peer_id } => {
-                // when removing the connections associated sockets will be closed automatically (RAII)
-                let was_removed = tcp_conns.remove(&peer_id);
-                if was_removed {
-                    event_source.send(EventType::TcpPeerDisconnected { peer_id: *peer_id }.into());
+    pub async fn run(command_rx: CommandReceiver, event_src: EventSource, event_snk: EventSink) {
+        debug!("Start listening to connection changes");
+
+        let mut tcp_conns = Connections::new();
+        let mut udp_conns = Connections::new();
+
+        while let Ok(command) = command_rx.recv() {
+            debug!("New connection command received: {:?}", command);
+
+            match &*command {
+                CommandType::RemovePeer { peer_id } => {
+                    // when removing the connections associated sockets will be closed automatically (RAII)
+                    let was_removed = tcp_conns.remove(&peer_id);
+                    if was_removed {
+                        event_src.send(Event::PeerDisconnected { peer_id: *peer_id }.into());
+                    }
+
+                    let was_removed = udp_conns.remove(&peer_id);
+                    if was_removed {
+                        event_src.send(Event::PeerDisconnected { peer_id: *peer_id }.into());
+                    }
+
+                },
+                CommandType::SendBytes { receiver, bytes } => {
+                    // FIXME: error handling
+                    if let Some(conn) = tcp_conns.get_mut(receiver) {
+                        conn.send(bytes.clone()).await.expect("error sending message using TCP");
+
+                    } else if let Some(conn) = udp_conns.get_mut(receiver) {
+                        conn.send(bytes.clone()).await.expect("error sending message using UDP");
+                    }
                 }
+                CommandType::BroadcastBytes { bytes } => {
+                    // FIXME: error handling
+                    if tcp_conns.num() > 0 {
+                        tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
+                    }
 
-                let was_removed = udp_conns.remove(&peer_id);
-                if was_removed {
-                    event_source.send(EventType::UdpPeerDisconnected { peer_id: *peer_id }.into());
+                    if udp_conns.num() > 0 {
+                        udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
+                    }
                 }
-
-            },
-            CommandType::SendBytes { receiver, bytes } => {
-                // FIXME: error handling
-                if let Some(conn) = tcp_conns.get_mut(receiver) {
-                    conn.send(bytes.clone()).await.expect("error sending message using TCP");
-
-                } else if let Some(conn) = udp_conns.get_mut(receiver) {
-                    conn.send(bytes.clone()).await.expect("error sending message using UDP");
-                }
+                CommandType::Shutdown => {
+                    drop(tcp_conns);
+                    drop(udp_conns);
+                    event_src.send(Event::Shutdown {}.into());
+                    break
+                },
+                _ => (),
             }
-            CommandType::BroadcastBytes { bytes } => {
-                // FIXME: error handling
-                if tcp_conns.num() > 0 {
-                    tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
-                }
-
-                if udp_conns.num() > 0 {
-                    udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
-                }
-            }
-            CommandType::Shutdown => {
-                drop(tcp_conns);
-                drop(udp_conns);
-                event_source.send(EventType::Shutdown {}.into());
-                break
-            },
-            _ => (),
         }
-    }
 
-    debug!("Connection listener stops listening");
+        debug!("Connection listener stops listening");
+    }
 }
 
 #[async_trait]
@@ -157,29 +162,6 @@ impl From<&str> for Protocol {
             "tcp" => Self::Tcp,
             "udp" => Self::Udp,
             _ => panic!("Unknown protocol specifier"),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    mod udp {
-        use super::{Udp, UdpConnection};
-
-        #[test]
-        fn create_udp_connection() {
-
-        }
-    }
-
-    mod tcp {
-        use super::{Tcp, TcpConnection};
-
-        #[test]
-        fn create_tcp_connection() {
-
         }
     }
 }

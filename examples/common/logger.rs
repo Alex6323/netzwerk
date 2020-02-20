@@ -28,32 +28,32 @@ pub fn init(level_filter: log::LevelFilter) {
         .init();
 }
 
-pub fn trace(message: &str) {
+pub fn trace(message: &str, context: &str) {
     if log_enabled!(log::Level::Trace) {
-        trace!("{}", message);
+        trace!("{} {}", context, message);
     }
 }
 
-pub fn debug(message: &str) {
+pub fn debug(message: &str, context: &str) {
     if log_enabled!(log::Level::Debug) {
-        debug!("{}", message);
+        debug!("{} {}", context, message);
     }
 }
 
-pub fn info(message: &str) {
+pub fn info(message: &str, context: &str) {
     if log_enabled!(log::Level::Info) {
-        info!("{}", message);
+        info!("{} {}", context, message);
     }
 }
 
-pub fn warn(message: &str) {
+pub fn warn(message: &str, context: &str) {
     if log_enabled!(log::Level::Warn) {
-        warn!("{}", message);
+        warn!("{} {}", context, message);
     }
 }
 
-pub fn error(message: &str) {
+pub fn error(message: &str, context: &str) {
     if log_enabled!(log::Level::Error) {
-        error!("{}", message);
+        error!("{} {}", context, message);
     }
 }
