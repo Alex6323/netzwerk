@@ -67,9 +67,6 @@ pub enum Event {
         sender_addr: Address,
         bytes: Vec<u8>,
     },
-
-    /// Raised when the system has been commanded to shutdown.
-    Shutdown,
 }
 
 /*

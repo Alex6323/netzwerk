@@ -9,7 +9,7 @@ pub mod actor {
     use super::{PeerId, Peers, PeerState, Url};
 
     use crate::events::{Event, EventSink, EventSource};
-    use crate::commands::{CommandType, CommandReceiver};
+    use crate::commands::{Command, CommandReceiver};
 
     use async_std::net::TcpStream;
     use async_std::sync::Arc;
@@ -31,20 +31,20 @@ pub mod actor {
                     let command = command.expect("error receiving command");
                     debug!("New peer command received: {:?}", command);
 
-                    match &*command {
-                        CommandType::AddPeer { peer } => {
+                    match command {
+                        Command::AddPeer { peer } => {
                             peers.add(peer.clone());
 
                             event_src.send(Event::PeerAdded { peer: peer.clone() }.into())
                                 .expect("error sending `PeerAdded` event");
                         },
-                        CommandType::RemovePeer { peer_id } => {
+                        Command::RemovePeer { peer_id } => {
                             peers.remove(&peer_id);
 
-                            event_src.send(Event::PeerRemoved { peer_id: peer_id.clone() }.into())
+                            event_src.send(Event::PeerRemoved { peer_id }.into())
                                 .expect("error sending `PeerRemoved` event");
                         },
-                        CommandType::Shutdown => {
+                        Command::Shutdown => {
                             drop(peers);
                             break
                         }

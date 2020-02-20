@@ -2,7 +2,7 @@ pub use address::{Address, Url};
 pub use conns::{Connection, Connections, Protocol};
 pub use config::{Config, ConfigBuilder};
 pub use events::{Event, EventSink};
-pub use commands::{Command, CommandType, Controller};
+pub use commands::{Command,Controller};
 pub use message::Message;
 pub use peers::{Peer, PeerId, Peers};
 pub use log;

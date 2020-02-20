@@ -8,6 +8,7 @@ use crossbeam_channel as mpmc;
 
 const COMMAND_CHAN_CAPACITY: usize = 10;
 
+/*
 #[derive(Clone, Debug)]
 pub struct Command(Arc<CommandType>);
 
@@ -16,9 +17,11 @@ impl Command {
         Self(Arc::new(t))
     }
 }
+*/
 
 /// `Command`s can be used to control the networking layer from higher layers.
-pub enum CommandType {
+#[derive(Clone)]
+pub enum Command {
 
     /// Adds a peer to the system.
     AddPeer {
@@ -45,6 +48,7 @@ pub enum CommandType {
     Shutdown,
 }
 
+/*
 impl ops::Deref for Command {
     type Target = CommandType;
 
@@ -59,14 +63,16 @@ impl From<CommandType> for Command {
     }
 }
 
-impl fmt::Debug for CommandType {
+*/
+
+impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CommandType::AddPeer { peer } => write!(f, "AddPeer command <<{:?}>>", peer.id()),
-            CommandType::RemovePeer { peer_id } => write!(f, "RemovePeer command <<{:?}>>", peer_id),
-            CommandType::SendBytes { receiver, .. } => write!(f, "SendBytes command <<{:?}>>", receiver),
-            CommandType::BroadcastBytes { .. } => write!(f, "Broadcast command"),
-            CommandType::Shutdown => write!(f, "Shutdown command"),
+            Command::AddPeer { peer } => write!(f, "AddPeer command <<{:?}>>", peer.id()),
+            Command::RemovePeer { peer_id } => write!(f, "RemovePeer command <<{:?}>>", peer_id),
+            Command::SendBytes { receiver, .. } => write!(f, "SendBytes command <<{:?}>>", receiver),
+            Command::BroadcastBytes { .. } => write!(f, "Broadcast command"),
+            Command::Shutdown => write!(f, "Shutdown command"),
         }
     }
 }
@@ -92,7 +98,7 @@ impl Controller {
         self.task_handles.push(handle);
     }
 
-    pub fn send(&self, command: CommandType) {
+    pub fn send(&self, command: Command) {
         self.sender.send(command.into()).expect("error sending command");
     }
 }

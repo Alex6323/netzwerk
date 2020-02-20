@@ -13,7 +13,7 @@ pub mod actor {
     use super::Connections;
 
     use crate::events::{Event, EventSink, EventSource};
-    use crate::commands::{CommandReceiver, CommandType};
+    use crate::commands::{Command, CommandReceiver};
 
     use log::*;
 
@@ -26,30 +26,30 @@ pub mod actor {
         while let Ok(command) = command_rx.recv() {
             debug!("New connection command received: {:?}", command);
 
-            match &*command {
-                CommandType::RemovePeer { peer_id } => {
+            match command {
+                Command::RemovePeer { peer_id } => {
                     // when removing the connections associated sockets will be closed automatically (RAII)
                     let was_removed = tcp_conns.remove(&peer_id);
                     if was_removed {
-                        event_src.send(Event::PeerDisconnected { peer_id: *peer_id }.into());
+                        event_src.send(Event::PeerDisconnected { peer_id }.into());
                     }
 
                     let was_removed = udp_conns.remove(&peer_id);
                     if was_removed {
-                        event_src.send(Event::PeerDisconnected { peer_id: *peer_id }.into());
+                        event_src.send(Event::PeerDisconnected { peer_id }.into());
                     }
 
                 },
-                CommandType::SendBytes { receiver, bytes } => {
+                Command::SendBytes { receiver, bytes } => {
                     // FIXME: error handling
-                    if let Some(conn) = tcp_conns.get_mut(receiver) {
+                    if let Some(conn) = tcp_conns.get_mut(&receiver) {
                         conn.send(bytes.clone()).await.expect("error sending message using TCP");
 
-                    } else if let Some(conn) = udp_conns.get_mut(receiver) {
+                    } else if let Some(conn) = udp_conns.get_mut(&receiver) {
                         conn.send(bytes.clone()).await.expect("error sending message using UDP");
                     }
                 }
-                CommandType::BroadcastBytes { bytes } => {
+                Command::BroadcastBytes { bytes } => {
                     // FIXME: error handling
                     if tcp_conns.num() > 0 {
                         tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
@@ -59,10 +59,9 @@ pub mod actor {
                         udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
                     }
                 }
-                CommandType::Shutdown => {
+                Command::Shutdown => {
                     drop(tcp_conns);
                     drop(udp_conns);
-                    event_src.send(Event::Shutdown {}.into());
                     break
                 },
                 _ => (),

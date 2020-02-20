@@ -12,7 +12,7 @@
 use netzwerk::{
     Config, ConfigBuilder,
     Connections,
-    CommandType as NetworkCommand, Controller as NetworkController,
+    Command as NetworkCommand, Controller as NetworkController,
     Event, EventSink,
     log::*,
     Message,
