@@ -1,5 +1,4 @@
-use crate::address::Url;
-use crate::conns::Protocol;
+use crate::address::{Url, Protocol};
 
 use async_std::net::SocketAddr;
 
@@ -92,6 +91,11 @@ pub mod actor {
                                             stream
                                         }.into())
                                         .expect("error sending event");
+                                    } else {
+                                        event_src.send(Event::PeerDisconnected {
+                                            peer_id: peer.id(),
+                                            reconnect: Some(RECONNECT_COOLDOWN)
+                                        }).expect("error sending event");
                                     }
                                 }
                             }
@@ -251,16 +255,6 @@ impl Peers {
     }
 }
 
-/*
-impl ops::Deref for Peers {
-    type Target = HashMap<PeerId, Peer>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-*/
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PeerState {
     /// We are not connected to that peer.
@@ -303,27 +297,29 @@ mod tests {
 
     mod peer {
         use super::Peer;
+        use crate::address::Url;
         use async_std::task;
 
         #[test]
         fn create_new_peer() {
             task::block_on(async {
-                let peer = Peer::from_url("tcp://localhost:1337").await;
-                assert_eq!(peer.address().to_string(), "127.0.0.1:1337");
+                let peer = Peer::from_url(Url::from_str("tcp://localhost:1337"));
+                assert_eq!(peer.url().address().to_string(), "127.0.0.1:1337");
             })
         }
 
         #[test]
         fn new_peer_defaults_to_not_connected() {
             task::block_on(async {
-                let peer = Peer::from_address("127.0.0.1:1337").await;
-                assert!(!peer.connected(), "Peer should initially default to 'NotConnected'");
+                let peer = Peer::from_url(Url::from_str("tcp://127.0.0.1:1337"));
+                assert!(peer.is_not_connected(), "Peer should initially default to 'NotConnected'");
             })
         }
     }
 
     mod peers {
         use super::{Peer, Peers};
+        use crate::address::{Protocol, Url};
         use async_std::net::Ipv4Addr;
 
         #[test]
@@ -337,8 +333,8 @@ mod tests {
         fn add_peers() {
             let mut peers = Peers::new();
 
-            peers.add(Peer::from_ipv4_address(Ipv4Addr::new(127, 0, 0, 1), Some(1337)));
-            peers.add(Peer::from_ipv4_address(Ipv4Addr::new(127, 0, 0, 1), Some(1338)));
+            peers.add(Peer::from_url(Url::from_ipv4(Ipv4Addr::new(127, 0, 0, 1), Some(1337), Protocol::Udp)));
+            peers.add(Peer::from_url(Url::from_ipv4(Ipv4Addr::new(127, 0, 0, 1), Some(1338), Protocol::Tcp)));
 
             assert_eq!(2, peers.num());
         }

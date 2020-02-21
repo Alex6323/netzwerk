@@ -10,7 +10,7 @@ use async_std::sync::Arc;
 use async_trait::async_trait;
 use log::*;
 
-pub async fn run(binding_addr: SocketAddr, event_src: EventSource, event_snk: EventSink) {
+pub async fn run(binding_addr: SocketAddr, event_src: EventSource) {
     debug!("[TCP  ] Starting TCP actor");
 
     let listener = TcpListener::bind(binding_addr).await.expect("error binding TCP listener");

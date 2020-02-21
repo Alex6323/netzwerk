@@ -1,7 +1,8 @@
-use crate::conns::Protocol;
 use crate::utils;
 
 use async_std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, ToSocketAddrs};
+
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Address {
@@ -48,12 +49,17 @@ impl Address {
     }
 }
 
-// TODO: use 'url' crate for parsing.
+impl fmt::Display for Address {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Url {
     /// Represents a TCP url ("tcp://...").
     Tcp(SocketAddr),
+
     /// Represents a UDP url ("udp://...").
     Udp(SocketAddr),
 }
@@ -70,7 +76,7 @@ impl Url {
         }
     }
 
-    pub fn from_url_str(url: &str) -> Self {
+    pub fn from_str(url: &str) -> Self {
         let proto_addr: Vec<&str> = url.split_terminator("://").collect();
         assert_eq!(2, proto_addr.len());
 
@@ -112,6 +118,39 @@ impl Url {
         match *self {
             Url::Tcp(_) => Protocol::Tcp,
             Url::Udp(_) => Protocol::Udp,
+        }
+    }
+
+    pub fn address(&self) -> Address {
+        match *self {
+            Url::Tcp(socket_addr) => Address::Ip(socket_addr),
+            Url::Udp(socket_addr) => Address::Ip(socket_addr),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Protocol {
+    Tcp,
+    Udp,
+}
+
+impl Protocol {
+    pub fn is_tcp(&self) -> bool {
+        *self == Protocol::Tcp
+    }
+
+    pub fn is_udp(&self) -> bool {
+        *self == Protocol::Udp
+    }
+}
+
+impl From<&str> for Protocol {
+    fn from(s: &str) -> Self {
+        match s {
+            "tcp" => Self::Tcp,
+            "udp" => Self::Udp,
+            _ => panic!("Unknown protocol specifier"),
         }
     }
 }

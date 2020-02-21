@@ -10,9 +10,6 @@ use crossbeam_channel as mpmc;
 
 const EVENT_CHAN_CAPACITY: usize = 10000;
 
-//#[derive(Clone, Debug)]
-//pub struct Event(Arc<EventType>);
-
 /// This Enum holds all events in the networking layer.
 #[derive(Clone)]
 pub enum Event {
@@ -40,6 +37,7 @@ pub enum Event {
         address: Address,
         socket: Arc<UdpSocket>,
     },
+
     /// Raised when a peer was disconnected.
     PeerDisconnected {
         peer_id: PeerId,
@@ -79,7 +77,7 @@ pub enum Event {
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Event::PeerAdded { peer, num_peers } => write!(f, "Peer added: {:?}, Count = {}", peer.id(), num_peers),
+            Event::PeerAdded { peer, num_peers } => write!(f, "Peer added: id = {:?}, num = {}", peer.id(), num_peers),
             Event::PeerRemoved { peer_id } => write!(f, "Peer removed: {:?}", peer_id),
             Event::PeerConnectedViaTCP { peer_id, .. } => write!(f, "Peer connected via TCP: {:?}", peer_id),
             Event::PeerConnectedViaUDP { peer_id, .. } => write!(f, "Peer connected via UDP: {:?}", peer_id),

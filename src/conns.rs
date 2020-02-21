@@ -186,30 +186,3 @@ impl<R: NetIO> Connections<R> {
         Ok(peer_conn.0.recv().await?)
     }
 }
-
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Protocol {
-    Tcp,
-    Udp,
-}
-
-impl Protocol {
-    pub fn is_tcp(&self) -> bool {
-        *self == Protocol::Tcp
-    }
-
-    pub fn is_udp(&self) -> bool {
-        *self == Protocol::Udp
-    }
-}
-
-impl From<&str> for Protocol {
-    fn from(s: &str) -> Self {
-        match s {
-            "tcp" => Self::Tcp,
-            "udp" => Self::Udp,
-            _ => panic!("Unknown protocol specifier"),
-        }
-    }
-}

@@ -26,7 +26,7 @@ impl Args {
     pub fn make_config(&self) -> Config {
         let mut peers = vec![];
         for peer in &self.peers {
-            peers.push(Url::from_url_str(&peer));
+            peers.push(Url::from_str(&peer));
         }
 
         Config {
@@ -36,19 +36,3 @@ impl Args {
         }
     }
 }
-/*
-impl From<Args> for Config {
-    fn from(args: Args) -> Self {
-        let mut peers = vec![];
-        for peer in &args.peers {
-            peers.push(Url::from_url_str(&peer));
-        }
-
-        Self {
-            id: args.id,
-            binding_addr: Address::new(args.bind),
-            peers,
-        }
-    }
-}
-*/

@@ -56,7 +56,7 @@ impl ConfigBuilder {
     }
 
     pub fn with_peer(mut self, peer_url: &str) -> Self {
-        let url = Url::from_url_str(peer_url);
+        let url = Url::from_str(peer_url);
         self.peers.push(url);
         self
     }

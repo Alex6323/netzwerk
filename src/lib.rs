@@ -1,5 +1,5 @@
-pub use address::{Address, Url};
-pub use conns::{Connection, Connections, Protocol};
+pub use address::{Address, Protocol, Url};
+pub use conns::{Connection, Connections};
 pub use config::{Config, ConfigBuilder};
 pub use events::{Event, EventSink};
 pub use commands::{Command,Controller};
@@ -59,7 +59,7 @@ pub fn init(config: Config) -> (Controller, EventSink) {
     let actor2 = task::spawn(peers::actor::run(command_receiver.clone(), event_source.clone(), event_sink.clone()));
     wait(500, "[Net  ] Waiting for actors");
 
-    let actor3 = task::spawn(tcp::run(binding_addr, event_source.clone(), event_sink.clone()));
+    let actor3 = task::spawn(tcp::run(binding_addr, event_source.clone()));
     wait(500, "[Net  ] Waiting for actors");
 
     controller.add_task(actor1);
