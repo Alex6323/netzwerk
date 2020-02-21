@@ -76,9 +76,17 @@ pub mod actor {
 pub trait NetIO {
     async fn send(&mut self, bytes: Vec<u8>) -> result::MessageResult<Event>;
     async fn recv(&mut self) -> result::MessageResult<Event>;
+    fn peer_id(&self) -> PeerId;
 }
 
 pub struct Connection<N: NetIO>(pub(crate) N);
+
+impl<N: NetIO> Eq for Connection<N> {}
+impl<N: NetIO> PartialEq for Connection<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.peer_id() == other.0.peer_id()
+    }
+}
 
 pub struct Connections<N: NetIO>(pub(crate) HashMap<PeerId, Connection<N>>);
 

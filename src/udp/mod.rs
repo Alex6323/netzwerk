@@ -47,7 +47,11 @@ impl NetIO for Udp {
         } else {
             Ok(Bytes::from(buffer))
         }
+    }
 
+    fn peer_id(&self) -> PeerId {
+        // FIXME: proper error handling
+        PeerId(self.stream.peer_addr().expect("error reading remote peer address"))
     }
 }
 

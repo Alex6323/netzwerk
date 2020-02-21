@@ -79,6 +79,11 @@ impl NetIO for Tcp {
             bytes: buffer
         }.into())
     }
+
+    fn peer_id(&self) -> PeerId {
+        // FIXME: proper error handling
+        PeerId(self.stream.peer_addr().expect("error reading remote peer address"))
+    }
 }
 
 impl Connection<Tcp> {

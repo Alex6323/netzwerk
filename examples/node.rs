@@ -6,7 +6,7 @@
 //! two TCP peers located at localhost 1338, localhost 1339 pass this to `cargo`:
 //!
 //! ```bash
-//! cargo r --example node -- --id A --bind localhost:1337 --peers tcp://localhost:1338 tcp://localhost:1339
+//! cargo r --example node -- --id A --bind localhost:1337 --peers tcp://localhost:1338 tcp://localhost:1339 --msg hello
 //! ```
 
 use netzwerk::{
@@ -46,8 +46,8 @@ fn main() {
     logger::info("example", &format!("Created node <<{}>>", node.id()));
 
 
-    // TEMP: for 10 seconds broadcast a message each second
-    for _ in 0..11 {
+    // TEMP: broadcast a message each second
+    for _ in 0..10 {
         std::thread::sleep(std::time::Duration::from_millis(1000));
         node.broadcast_msg(Utf8Message::new(&args.msg));
     }
@@ -90,7 +90,7 @@ impl Node {
     }
 
     pub fn shutdown(mut self) {
-        debug!("Shutting down...");
+        info!("Shutting down...");
 
         self.controller.send(NetworkCommand::Shutdown);
 
