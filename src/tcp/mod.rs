@@ -11,13 +11,13 @@ use async_trait::async_trait;
 use log::*;
 
 pub async fn run(binding_addr: SocketAddr, event_src: EventSource, event_snk: EventSink) {
-    debug!("TCP module starts listening");
+    debug!("[TCP  ] Starting TCP actor");
 
     let listener = TcpListener::bind(binding_addr).await.expect("error binding TCP listener");
-    debug!("Successfully bound TCP listener to <<{}>>",
+    debug!("[TCP  ] Bound to <<{}>>",
         listener.local_addr().expect("error reading local address from TCP socket"));
 
-    debug!("Start accepting TCP clients");
+    debug!("[TCP  ] Accepting TCP clients");
     let mut incoming = listener.incoming();
 
     // NOTE: This loop should exit if all `TcpStream`s are dropped.
@@ -28,7 +28,7 @@ pub async fn run(binding_addr: SocketAddr, event_src: EventSource, event_snk: Ev
         let peer_id = PeerId(stream.peer_addr()
             .expect("error unwrapping remote address from TCP stream"));
 
-        event_src.send(Event::PeerConnectedViaTCP { peer_id, stream: Arc::new(stream) }.into())
+        event_src.send(Event::PeerConnectedViaTCP { peer_id, stream }.into())
             .expect("error sending NewTcpConnection event");
     }
 
@@ -40,7 +40,7 @@ pub struct Tcp {
 }
 
 impl Tcp {
-    fn new(stream: TcpStream) -> Self {
+    pub fn new(stream: TcpStream) -> Self {
         Self { stream }
     }
 }

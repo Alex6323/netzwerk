@@ -1,23 +1,11 @@
 use crate::peers::{Peer, PeerId};
 
-use std::{fmt, ops};
+use std::fmt;
 
-use async_std::sync::Arc;
 use async_std::task::JoinHandle;
 use crossbeam_channel as mpmc;
 
 const COMMAND_CHAN_CAPACITY: usize = 10;
-
-/*
-#[derive(Clone, Debug)]
-pub struct Command(Arc<CommandType>);
-
-impl Command {
-    pub fn new(t: CommandType) -> Self {
-        Self(Arc::new(t))
-    }
-}
-*/
 
 /// `Command`s can be used to control the networking layer from higher layers.
 #[derive(Clone)]
@@ -44,26 +32,12 @@ pub enum Command {
         bytes: Vec<u8>,
     },
 
+    /// Sends a command to reconnect in case a connection to a peer has been lost.
+    CheckPeers,
+
     /// Shuts down the system.
     Shutdown,
 }
-
-/*
-impl ops::Deref for Command {
-    type Target = CommandType;
-
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl From<CommandType> for Command {
-    fn from(t: CommandType) -> Self {
-        Self(Arc::new(t))
-    }
-}
-
-*/
 
 impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -72,6 +46,7 @@ impl fmt::Debug for Command {
             Command::RemovePeer { peer_id } => write!(f, "RemovePeer command <<{:?}>>", peer_id),
             Command::SendBytes { receiver, .. } => write!(f, "SendBytes command <<{:?}>>", receiver),
             Command::BroadcastBytes { .. } => write!(f, "Broadcast command"),
+            Command::CheckPeers => write!(f, "CheckPeers command"),
             Command::Shutdown => write!(f, "Shutdown command"),
         }
     }
@@ -100,6 +75,10 @@ impl Controller {
 
     pub fn send(&self, command: Command) {
         self.sender.send(command.into()).expect("error sending command");
+    }
+
+    pub fn sender(&self) -> CommandSender {
+        self.sender.clone()
     }
 }
 

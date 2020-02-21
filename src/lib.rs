@@ -30,20 +30,20 @@ use std::time::Duration;
 /// all events.
 pub fn init(config: Config) -> (Controller, EventSink) {
 
-    debug!("Initializing network layer");
+    debug!("[Net  ] Initializing network layer");
 
     let static_peers = config.peers();
     if static_peers.num() == 0 {
-        warn!("No static peers from config found.");
+        warn!("[Net  ] No static peers from config found.");
     } else {
-        info!("Found {} static peer(s) in config.", static_peers.num())
+        info!("[Net  ] Found {} static peer(s) in config.", static_peers.num())
     }
 
     let (mut controller, command_receiver) = commands::channel();
     let (event_source, event_sink) = events::channel();
 
-    //TODO: ActorMailbox is Clone & Copy
-    // let mailbox = ActorMailbox::new(command_receiver, event_source, event_sink);
+    // TODO: ActorLink is Clone & Copy
+    // let link = ActorLink::new(command_receiver, event_source, event_sink);
 
     let binding_addr = if let Address::Ip(binding_addr) = config.binding_addr {
         binding_addr
@@ -57,10 +57,10 @@ pub fn init(config: Config) -> (Controller, EventSink) {
 
     let actor1 = task::spawn(conns::actor::run(command_receiver.clone(), event_source.clone(), event_sink.clone()));
     let actor2 = task::spawn(peers::actor::run(command_receiver.clone(), event_source.clone(), event_sink.clone()));
-    wait(500, "wait for 'conns' and 'peers' actors to run.");
+    wait(500, "[Net  ] Waiting for actors");
 
     let actor3 = task::spawn(tcp::run(binding_addr, event_source.clone(), event_sink.clone()));
-    wait(500, "wait for 'tcp' actor to run.");
+    wait(500, "[Net  ] Waiting for actors");
 
     controller.add_task(actor1);
     controller.add_task(actor2);

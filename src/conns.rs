@@ -12,63 +12,100 @@ pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
 pub mod actor {
     use super::Connections;
 
+    use crate::conns::Connection;
     use crate::events::{Event, EventSink, EventSource};
     use crate::commands::{Command, CommandReceiver};
+    use crate::tcp::Tcp;
+    //use crate::udp::Udp;
 
     use log::*;
+    use crossbeam_channel::select;
 
     pub async fn run(command_rx: CommandReceiver, event_src: EventSource, event_snk: EventSink) {
-        debug!("Start listening to connection changes");
+        debug!("[Conns] Starting actor");
 
-        let mut tcp_conns = Connections::new();
-        let mut udp_conns = Connections::new();
+        let mut tcp_conns: Connections<Tcp> = Connections::new();
+        //let mut udp_conns = Connections::new();
 
-        while let Ok(command) = command_rx.recv() {
-            debug!("New connection command received: {:?}", command);
+        loop {
+            select! {
+                // handle commands
+                recv(command_rx) -> command => {
+                    let command = command.expect("error receiving command");
+                    debug!("[Conns] Received: {:?}", command);
 
-            match command {
-                Command::RemovePeer { peer_id } => {
-                    // when removing the connections associated sockets will be closed automatically (RAII)
-                    let was_removed = tcp_conns.remove(&peer_id);
-                    if was_removed {
-                        event_src.send(Event::PeerDisconnected { peer_id }.into());
+                    match command {
+                        Command::RemovePeer { peer_id } => {
+                            // === TCP ===
+                            // when removing the connections associated sockets will be closed automatically (RAII)
+                            let was_removed = tcp_conns.remove(&peer_id);
+                            if was_removed {
+                                event_src.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
+                            }
+                            // === UDP ===
+                            /*
+                            let was_removed = udp_conns.remove(&peer_id);
+                            if was_removed {
+                                event_src.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
+                            }
+                            */
+
+                        },
+                        Command::SendBytes { receiver, bytes } => {
+                            // === TCP ===
+                            // FIXME: error handling
+                            if let Some(conn) = tcp_conns.get_mut(&receiver) {
+                                //conn.send(bytes.clone()).await.expect("error sending message using TCP");
+
+                            }
+                            // === UDP ===
+                            /*
+                            else if let Some(conn) = udp_conns.get_mut(&receiver) {
+                                //conn.send(bytes.clone()).await.expect("error sending message using UDP");
+                            }
+                            */
+                        }
+                        Command::BroadcastBytes { bytes } => {
+                            // === TCP ===
+                            // FIXME: error handling
+                            if tcp_conns.num() > 0 {
+                                //tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
+                            }
+
+                            // === UDP ===
+                            /*
+                            if udp_conns.num() > 0 {
+                                //udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
+                            }
+                            */
+                        }
+                        Command::Shutdown => {
+                            drop(tcp_conns);
+                            //drop(udp_conns);
+                            break
+                        },
+                        _ => (),
                     }
-
-                    let was_removed = udp_conns.remove(&peer_id);
-                    if was_removed {
-                        event_src.send(Event::PeerDisconnected { peer_id }.into());
-                    }
-
                 },
-                Command::SendBytes { receiver, bytes } => {
-                    // FIXME: error handling
-                    if let Some(conn) = tcp_conns.get_mut(&receiver) {
-                        conn.send(bytes.clone()).await.expect("error sending message using TCP");
 
-                    } else if let Some(conn) = udp_conns.get_mut(&receiver) {
-                        conn.send(bytes.clone()).await.expect("error sending message using UDP");
+                // handle events
+                recv(event_snk) -> event => {
+                    let event = event.expect("error receiving event");
+                    debug!("[Conns] Received: {:?}", event);
+
+                    match event {
+                        Event::PeerConnectedViaTCP { peer_id, stream } => {
+                            let conn = Connection(Tcp::new(stream));
+
+                            //if !conns.
+                        }
+                        _ => (),
                     }
                 }
-                Command::BroadcastBytes { bytes } => {
-                    // FIXME: error handling
-                    if tcp_conns.num() > 0 {
-                        tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
-                    }
-
-                    if udp_conns.num() > 0 {
-                        udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
-                    }
-                }
-                Command::Shutdown => {
-                    drop(tcp_conns);
-                    drop(udp_conns);
-                    break
-                },
-                _ => (),
             }
         }
 
-        debug!("Connection listener stops listening");
+        debug!("[Conns] Stopping actor");
     }
 }
 
@@ -80,6 +117,10 @@ pub trait NetIO {
 }
 
 pub struct Connection<N: NetIO>(pub(crate) N);
+
+impl<N: NetIO> Connection<N> {
+    // TODO
+}
 
 impl<N: NetIO> Eq for Connection<N> {}
 impl<N: NetIO> PartialEq for Connection<N> {

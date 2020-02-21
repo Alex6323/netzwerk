@@ -20,6 +20,7 @@ pub enum Event {
     /// Raised when a peer was added. The layer will try to connect to/reconnect with that peer.
     PeerAdded {
         peer: Peer,
+        num_peers: usize,
     },
 
     /// Raised when a peer was removed. No further attempts will be made to connect to that peer.
@@ -30,7 +31,7 @@ pub enum Event {
     /// Raised when a peer is connected or reconnected via TCP.
     PeerConnectedViaTCP {
         peer_id: PeerId,
-        stream: Arc<TcpStream>,
+        stream: TcpStream,
     },
 
     /// Raised when a peer is connected or reconnected via UDP.
@@ -41,13 +42,19 @@ pub enum Event {
     },
     /// Raised when a peer was disconnected.
     PeerDisconnected {
-        peer_id: PeerId
+        peer_id: PeerId,
+        reconnect: Option<u64>,
     },
 
     /// Raised when no packet was received from this peer for some time.
-    PeerIdle {
+    PeerStale {
         peer_id: PeerId,
         duration: Duration,
+    },
+
+    /// Raised when an attempt should be made to reconnect with that peer.
+    PeerReconnect {
+        peer_id: PeerId,
     },
 
     /// Raised when a message has been sent.
@@ -69,31 +76,15 @@ pub enum Event {
     },
 }
 
-/*
-impl ops::Deref for Event {
-    type Target = EventType;
-
-    fn deref(&self) -> &Self::Target {
-        &*self.0
-    }
-}
-
-impl From<EventType> for Event {
-    fn from(t: EventType) -> Self {
-        Self(Arc::new(t))
-    }
-}
-*/
-
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Event::PeerAdded { peer } => write!(f, "Peer added: {:?}", peer.id()),
+            Event::PeerAdded { peer, num_peers } => write!(f, "Peer added: {:?}, Count = {}", peer.id(), num_peers),
             Event::PeerRemoved { peer_id } => write!(f, "Peer removed: {:?}", peer_id),
             Event::PeerConnectedViaTCP { peer_id, .. } => write!(f, "Peer connected via TCP: {:?}", peer_id),
             Event::PeerConnectedViaUDP { peer_id, .. } => write!(f, "Peer connected via UDP: {:?}", peer_id),
-            Event::PeerDisconnected { peer_id } => write!(f, "Peer disconnected: {:?}", peer_id),
-            Event::PeerIdle { peer_id, .. } => write!(f, "Peer has been idle: {:?}", peer_id),
+            Event::PeerDisconnected { peer_id, reconnect } => write!(f, "Peer disconnected: {:?}, reconnect: {}", peer_id, reconnect.is_some()),
+            Event::PeerStale { peer_id, .. } => write!(f, "Peer is stale: {:?}", peer_id),
             Event::MessageSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
             Event::MessageReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
             _ => Ok(()),

@@ -12,7 +12,7 @@
 use netzwerk::{
     Config, ConfigBuilder,
     Connections,
-    Command as NetworkCommand, Controller as NetworkController,
+    Command, Controller,
     Event, EventSink,
     log::*,
     Message,
@@ -24,7 +24,11 @@ use netzwerk::{
 use common::*;
 
 use async_std::task;
+use futures::stream::Stream;
+use futures::*;
+use futures::future::Future;
 use structopt::StructOpt;
+use stream_cancel::StreamExt;
 
 mod common;
 
@@ -43,16 +47,21 @@ fn main() {
         .with_controller(controller)
         .build();
 
-    logger::info("example", &format!("Created node <<{}>>", node.id()));
+    node.init();
 
+    logger::info("example", &format!("Created node [{}]", node.id()));
 
+    node.wait_for_kill_signal();
+
+    /*
     // TEMP: broadcast a message each second
-    for _ in 0..10 {
+    for _ in 0..5 {
         std::thread::sleep(std::time::Duration::from_millis(1000));
         node.broadcast_msg(Utf8Message::new(&args.msg));
     }
 
-    node.shutdown();
+    */
+    //node.shutdown();
 }
 
 async fn notification_handler(event_sink: EventSink) {
@@ -63,21 +72,33 @@ async fn notification_handler(event_sink: EventSink) {
 
 struct Node {
     config: Config,
-    controller: NetworkController,
+    controller: Controller,
 }
 
 impl Node {
+
+    pub fn init(&self) {
+        for peer in self.config.peers().values() {
+            self.add_peer(peer.clone());
+        }
+    }
+
+    pub fn wait_for_kill_signal(&self) {
+        let mut rt = tokio::runtime::Runtime::new().expect("error");
+
+        rt.block_on(tokio::signal::ctrl_c()).expect("error");
+    }
 
     pub fn id(&self) -> &String {
         &self.config.id
     }
 
     pub fn add_peer(&self, peer: Peer) {
-        self.controller.send(NetworkCommand::AddPeer { peer });
+        self.controller.send(Command::AddPeer { peer });
     }
 
     pub fn remove_peer(&self, peer_id: PeerId) {
-        self.controller.send(NetworkCommand::RemovePeer { peer_id });
+        self.controller.send(Command::RemovePeer { peer_id });
     }
 
     pub fn wait(&self, handles: Vec<task::JoinHandle<()>>) {
@@ -92,7 +113,7 @@ impl Node {
     pub fn shutdown(mut self) {
         info!("Shutting down...");
 
-        self.controller.send(NetworkCommand::Shutdown);
+        self.controller.send(Command::Shutdown);
 
         task::block_on(async {
             for handle in self.controller.task_handles() {
@@ -102,11 +123,11 @@ impl Node {
     }
 
     pub fn send_msg(&self, message: impl Message, peer_id: PeerId) {
-        self.controller.send(NetworkCommand::SendBytes { receiver: peer_id, bytes: message.as_bytes() });
+        self.controller.send(Command::SendBytes { receiver: peer_id, bytes: message.as_bytes() });
     }
 
     pub fn broadcast_msg(&self, message: impl Message) {
-        self.controller.send(NetworkCommand::BroadcastBytes { bytes: message.as_bytes() });
+        self.controller.send(Command::BroadcastBytes { bytes: message.as_bytes() });
     }
 
     pub fn builder() -> NodeBuilder {
@@ -116,7 +137,7 @@ impl Node {
 
 struct NodeBuilder {
     config: Option<Config>,
-    controller: Option<NetworkController>,
+    controller: Option<Controller>,
 }
 
 impl NodeBuilder {
@@ -132,7 +153,7 @@ impl NodeBuilder {
         self
     }
 
-    pub fn with_controller(mut self, controller: NetworkController) -> Self {
+    pub fn with_controller(mut self, controller: Controller) -> Self {
         self.controller.replace(controller);
         self
     }
