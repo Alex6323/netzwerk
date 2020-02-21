@@ -1,15 +1,13 @@
 pub use address::{Address, Protocol, Url};
-pub use conns::{Connection, Connections};
+pub use conns::Connections;
 pub use config::{Config, ConfigBuilder};
-pub use events::{Event, EventSink};
+pub use events::{Event, EventSubscriber};
 pub use commands::{Command,Controller};
-pub use message::Message;
 pub use peers::{Peer, PeerId, Peers};
 pub use log;
 
 pub mod errors;
 pub mod utils;
-pub mod result;
 pub mod tcp;
 //pub mod udp;
 
@@ -18,17 +16,20 @@ mod config;
 mod conns;
 mod commands;
 mod events;
-mod message;
+//mod message;
 mod peers;
 
 use async_std::task;
 use log::*;
+
 use std::time::Duration;
+
+pub type Result<T> = std::result::Result<T, errors::Error>;
 
 /// Initializes the networking layer using a config, and returns a `Controller`
 /// for the user to interact with the system, and an `EventSink` to receive
 /// all events.
-pub fn init(config: Config) -> (Controller, EventSink) {
+pub fn init(config: Config) -> (Controller, EventSubscriber) {
 
     debug!("[Net  ] Initializing network layer");
 
@@ -59,7 +60,7 @@ pub fn init(config: Config) -> (Controller, EventSink) {
     let actor2 = task::spawn(peers::actor::run(command_receiver.clone(), event_source.clone(), event_sink.clone()));
     wait(500, "[Net  ] Waiting for actors");
 
-    let actor3 = task::spawn(tcp::run(binding_addr, event_source.clone()));
+    let actor3 = task::spawn(tcp::actor::run(binding_addr, event_source.clone()));
     wait(500, "[Net  ] Waiting for actors");
 
     controller.add_task(actor1);

@@ -32,9 +32,6 @@ pub enum Command {
         bytes: Vec<u8>,
     },
 
-    /// Sends a command to reconnect in case a connection to a peer has been lost.
-    CheckPeers,
-
     /// Shuts down the system.
     Shutdown,
 }
@@ -46,7 +43,6 @@ impl fmt::Debug for Command {
             Command::RemovePeer { peer_id } => write!(f, "RemovePeer command <<{:?}>>", peer_id),
             Command::SendBytes { receiver, .. } => write!(f, "SendBytes command <<{:?}>>", receiver),
             Command::BroadcastBytes { .. } => write!(f, "Broadcast command"),
-            Command::CheckPeers => write!(f, "CheckPeers command"),
             Command::Shutdown => write!(f, "Shutdown command"),
         }
     }

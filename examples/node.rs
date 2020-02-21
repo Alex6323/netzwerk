@@ -13,9 +13,8 @@ use netzwerk::{
     Config, ConfigBuilder,
     Connections,
     Command, Controller,
-    Event, EventSink,
+    Event, EventSubscriber,
     log::*,
-    Message,
     Peer, PeerId,
     Protocol,
     tcp::*,
@@ -64,7 +63,7 @@ fn main() {
     //node.shutdown();
 }
 
-async fn notification_handler(event_sink: EventSink) {
+async fn notification_handler(event_sink: EventSubscriber) {
     while let Ok(event) = event_sink.recv() {
         logger::info("example", &format!("Received event {:?}", event));
     }
@@ -122,11 +121,11 @@ impl Node {
         })
     }
 
-    pub fn send_msg(&self, message: impl Message, peer_id: PeerId) {
+    pub fn send_msg(&self, message: Utf8Message, peer_id: PeerId) {
         self.controller.send(Command::SendBytes { receiver: peer_id, bytes: message.as_bytes() });
     }
 
-    pub fn broadcast_msg(&self, message: impl Message) {
+    pub fn broadcast_msg(&self, message: Utf8Message) {
         self.controller.send(Command::BroadcastBytes { bytes: message.as_bytes() });
     }
 

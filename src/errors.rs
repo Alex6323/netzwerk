@@ -30,3 +30,21 @@ pub enum PeerError {
     #[error(display = "Binding to socket failed")]
     SocketBindingFailed(#[source] std::io::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum Error {
+    // TODO
+}
+
+#[derive(Debug, Error)]
+pub enum ConnectionError {
+
+    #[error(display = "Error occurred during receiving bytes")]
+    RecvBytesFailed,
+
+    #[error(display = "Error occurred during sending bytes")]
+    SendBytesFailed,
+
+    #[error(display = "Tried sending to unknown peer")]
+    UnknownPeer,
+}

@@ -1,10 +1,11 @@
 use crate::address::Address;
 use crate::peers::{Peer, PeerId};
+use crate::tcp::TcpConnection;
 
-use std::{fmt, ops};
+use std::fmt;
 use std::time::Duration;
 
-use async_std::net::{TcpStream, UdpSocket};
+use async_std::net::UdpSocket;
 use async_std::sync::Arc;
 use crossbeam_channel as mpmc;
 
@@ -28,7 +29,7 @@ pub enum Event {
     /// Raised when a peer is connected or reconnected via TCP.
     PeerConnectedViaTCP {
         peer_id: PeerId,
-        stream: TcpStream,
+        tcp_conn: TcpConnection,
     },
 
     /// Raised when a peer is connected or reconnected via UDP.
@@ -55,19 +56,19 @@ pub enum Event {
         peer_id: PeerId,
     },
 
-    /// Raised when a message has been sent.
-    MessageSent {
+    /// Raised when bytes have been sent to a peer.
+    BytesSent {
         num_bytes: usize,
         receiver_addr: Address,
     },
 
-    /// Raised when a messge has been sent to all peers.
-    MessageBroadcasted {
+    /// Raised when bytes have been sent to all peers.
+    BytesBroadcasted {
         num_bytes: usize,
     },
 
-    /// Raised when a message has been received.
-    MessageReceived {
+    /// Raised when bytes have been received.
+    BytesReceived {
         num_bytes: usize,
         sender_addr: Address,
         bytes: Vec<u8>,
@@ -83,16 +84,16 @@ impl fmt::Debug for Event {
             Event::PeerConnectedViaUDP { peer_id, .. } => write!(f, "Peer connected via UDP: {:?}", peer_id),
             Event::PeerDisconnected { peer_id, reconnect } => write!(f, "Peer disconnected: {:?}, reconnect: {}", peer_id, reconnect.is_some()),
             Event::PeerStale { peer_id, .. } => write!(f, "Peer is stale: {:?}", peer_id),
-            Event::MessageSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
-            Event::MessageReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
+            Event::BytesSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
+            Event::BytesReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
             _ => Ok(()),
         }
     }
 }
 
-pub type EventSource = mpmc::Sender<Event>;
-pub type EventSink = mpmc::Receiver<Event>;
+pub type EventPublisher = mpmc::Sender<Event>;
+pub type EventSubscriber = mpmc::Receiver<Event>;
 
-pub fn channel() -> (EventSource, EventSink) {
+pub fn channel() -> (EventPublisher, EventSubscriber) {
     mpmc::bounded::<Event>(EVENT_CHAN_CAPACITY)
 }
