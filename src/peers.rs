@@ -198,7 +198,7 @@ pub mod actor {
                     match event {
                         Event::PeerAdded { mut peer, .. } => {
                             if peer.is_not_connected() {
-                                if let Some(stream) = connect_to_peer(&mut peer) {
+                                if let Some(stream) = connect_to_peer(&mut peer).await {
                                     peers_tx.send(Event::PeerConnectedViaTCP {
                                         peer_id: peer.id(),
                                         tcp_conn: TcpConnection::new(stream),
@@ -231,7 +231,7 @@ pub mod actor {
                         Event::TryReconnect { peer_id } => {
                             if let Some(mut peer) = peers.get_mut(&peer_id) {
                                 if peer.is_not_connected() {
-                                    if let Some(stream) = connect_to_peer(&mut peer) {
+                                    if let Some(stream) = connect_to_peer(&mut peer).await {
                                         peers_tx.send(Event::PeerConnectedViaTCP {
                                             peer_id: peer.id(),
                                             tcp_conn: TcpConnection::new(stream),
@@ -255,18 +255,11 @@ pub mod actor {
         debug!("[Peers] Stopping actor");
     }
 
-    fn connect_to_peer(peer: &mut Peer) -> Option<TcpStream> {
+    async fn connect_to_peer(peer: &mut Peer) -> Option<TcpStream> {
         match peer.url() {
             // === TCP ===
             Url::Tcp(peer_addr) => {
-                /*
-                let stream = TcpStream::connect(peer_addr)
-                    .await
-                    .expect("error connecting to peer");
-                */
-
-                // NOTE: unfortunately we have to do this (blocking) atm
-                match task::block_on(TcpStream::connect(peer_addr)) {
+                match TcpStream::connect(peer_addr).await {
                     Ok(stream) => {
                         peer.set_state(PeerState::Connected);
 

@@ -85,17 +85,16 @@ pub mod actor {
 
     /// Starts the TCP socket actor.
     pub async fn run(binding_addr: SocketAddr, mut command_rx: CommandRx, mut event_pub: EventPub) {
-        debug!("[TCP  ] Starting TCP socket actor");
+        debug!("[TCP  ] Starting actor");
 
         let listener = TcpListener::bind(binding_addr).await.expect("error binding TCP listener");
         debug!("[TCP  ] Bound to {}",
             listener.local_addr().expect("error reading local address from TCP socket"));
 
         debug!("[TCP  ] Accepting TCP clients");
-        // NOTE: 'fuse' ensures 'None' forever after the first 'None'
         let mut incoming = listener.incoming();
-        //let mut command_rx = command_rx.fuse();
 
+        // NOTE: 'fuse' ensures 'None' forever after the first 'None'
         loop {
             select! {
                 // Handle connection requests
@@ -118,9 +117,9 @@ pub mod actor {
                 // Handle API commands
                 command = command_rx.next().fuse() => {
                     if let Some(command) = command {
+                        debug!("[TCP  ] Received: {:?}", command);
                         match command {
                             Command::Shutdown => {
-                                debug!("[TCP  ] Received shutdown command");
                                 break;
                             },
                             _ => (),
@@ -130,6 +129,6 @@ pub mod actor {
             }
         }
 
-        debug!("[TCP  ] Stopping TCP socket actor");
+        debug!("[TCP  ] Stopping actor");
     }
 }
