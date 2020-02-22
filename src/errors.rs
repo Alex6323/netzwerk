@@ -37,14 +37,27 @@ pub enum Error {
 }
 
 #[derive(Debug, Error)]
-pub enum ConnectionError {
+pub enum SendError {
 
-    #[error(display = "Error occurred during receiving bytes")]
-    RecvBytesFailed,
+    #[error(display = "IO Error")]
+    IoError(#[source] std::io::Error),
 
     #[error(display = "Error occurred during sending bytes")]
-    SendBytesFailed,
+    SendBytesError,
 
     #[error(display = "Tried sending to unknown peer")]
-    UnknownPeer,
+    UnknownPeerError,
+}
+
+#[derive(Debug, Error)]
+pub enum RecvError {
+
+    #[error(display = "IO Error")]
+    IoError(#[source] std::io::Error),
+
+    #[error(display = "Error occurred during receiving bytes")]
+    RecvBytesError,
+
+    #[error(display = "Tried sending to unknown peer")]
+    UnknownPeerError,
 }

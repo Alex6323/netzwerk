@@ -1,70 +1,110 @@
-use crate::connections::{Connection, MAX_BUFFER_SIZE, NetIO};
-use crate::events::EventProducer;
-use crate::result;
+use crate::address::Address;
+use crate::conns::{MAX_BUFFER_SIZE, SendResult, RawConnection, RecvResult};
+use crate::events::{Event, EventPublisher as EventPub};
+use crate::errors::{RecvError, SendError};
+use crate::peers::PeerId;
 
-use async_std::net::{UdpSocket, SocketAddr};
+use async_std::net::{SocketAddr, UdpSocket};
+use async_std::prelude::*;
+use async_std::sync::Arc;
 use async_std::task;
 use async_trait::async_trait;
+use futures::sink::SinkExt;
+use futures::{select, FutureExt};
 use log::*;
 
-pub async fn init(binding_addr: SocketAddr, event_prod: EventProducer) {
-    let socket = UdpSocket::bind(binding_addr).await.expect("error binding UDP socket");
-    debug!("Successfully bound UDP socket to <<{}>>",
-        socket.local_addr().expect("error reading local address from UDP socket"));
-    debug!("Starting udp processor");
-    // TODO: send UdpSocketBound message
-    debug!("Exited udp processor");
+/// Represents a UDP connection.
+#[derive(Clone)]
+pub struct UdpConnection {
+    socket: Arc<UdpSocket>,
+    peer_addr: SocketAddr,
 }
 
-pub struct Udp {
-    bound_socket: UdpSocket,
-    peer_address: SocketAddr,
+impl UdpConnection {
+
+    /// Creates a new TCP connection from a TCP stream instance.
+    pub fn new(socket: UdpSocket, peer_addr: SocketAddr) -> Self {
+        Self {
+            socket: Arc::new(socket),
+            peer_addr,
+        }
+    }
+
+    /// Returns peer address associated with this connection.
+    pub fn peer_addr(&self) -> SocketAddr {
+        self.peer_addr
+    }
 }
 
-impl Udp {
-    fn new(bound_socket: UdpSocket, peer_address: SocketAddr) -> Self {
-        Self { bound_socket, peer_address }
+impl Drop for UdpConnection {
+    fn drop(&mut self) {
+        // TODO
+    }
+}
+
+impl Eq for UdpConnection {}
+impl PartialEq for UdpConnection {
+    fn eq(&self, other: &Self) -> bool {
+        self.peer_addr() == other.peer_addr()
     }
 }
 
 #[async_trait]
-impl NetIO for Udp {
-
-    async fn send(&mut self, bytes: Vec<u8>) -> result::MessageResult<usize> {
-        let nb = self.bound_socket.send_to(&bytes, &self.peer_address).await?;
-
-        Ok(nb)
-    }
-
-    async fn recv(&mut self) -> result::MessageResult<Vec<u8>> {
-        let mut buffer = vec![0u8; MAX_BUFFER_SIZE];
-
-        let (nb, peer_address) = self.bound_socket.recv_from(&mut buffer).await?;
-
-        if peer_address != self.peer_address {
-            // NOTE: not sure if this makes sense.
-            Ok(Bytes::new())
-        } else {
-            Ok(Bytes::from(buffer))
-        }
-    }
+impl RawConnection for UdpConnection {
 
     fn peer_id(&self) -> PeerId {
-        // FIXME: proper error handling
-        PeerId(self.stream.peer_addr().expect("error reading remote peer address"))
+        PeerId(self.peer_addr())
+    }
+
+    async fn send(&mut self, bytes: Vec<u8>) -> SendResult<Event> {
+        let num_bytes = self.socket.send_to(&bytes, &self.peer_addr()).await?;
+
+        Ok(Event::BytesSent {
+            num_bytes,
+            receiver_addr: Address::new(self.peer_addr())
+        }.into())
+    }
+
+    async fn recv(&mut self) -> RecvResult<Event> {
+        let mut bytes = vec![0; MAX_BUFFER_SIZE];
+        let mut socket = &*self.socket;
+
+        let (num_bytes, peer_addr) = socket.recv_from(&mut bytes).await?;
+        if peer_addr == self.peer_addr() {
+            Ok(Event::BytesReceived {
+                num_bytes,
+                sender_addr: Address::new(peer_addr),
+                bytes
+            }.into())
+        } else {
+            Err(RecvError::UnknownPeerError)
+        }
     }
 }
 
-impl Connection<Udp> {
-    pub fn new(udp_socket: UdpSocket, peer_address: SocketAddr) -> Self {
-        Self(Udp::new(udp_socket, peer_address))
-    }
-    pub async fn send(&mut self, bytes: Bytes) -> result::Result<()> {
-        Ok(self.0.send(bytes).await?)
-    }
-    pub async fn recv(&mut self) -> result::Result<Bytes> {
-        Ok(self.0.recv().await?)
+pub mod actor {
+    use super::*;
+
+    /// Runs the UDP socket actor.
+    ///
+    /// The actor will listen for incoming UDP packets, and dispatch them to the
+    /// appropriate UDP connection.
+    pub async fn run(binding_addr: SocketAddr, event_prod: EventPub) {
+        debug!("[UDP  ] Starting UDP socket actor");
+
+        let socket = UdpSocket::bind(binding_addr).await.expect("error binding UDP socket");
+        debug!("[UDP  ] Bound to {}",
+            socket.local_addr().expect("error reading local address from UDP socket"));
+
+        loop {
+            let mut buf = vec![0; 1024];
+            let (num_bytes, peer_addr) = socket.recv_from(&mut buf).await
+                .expect("error receiving from UDP socket");
+
+            info!("Received {} bytes from {}", num_bytes, peer_addr);
+
+        }
+
+        debug!("[UDP  ] Stopping UDP socket actor");
     }
 }
-
-pub type UdpConnection = Connection<Udp>;

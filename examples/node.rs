@@ -10,10 +10,13 @@
 //! ```
 
 use netzwerk::{
-    Config, ConfigBuilder,
+    Config,
     Connections,
-    Command, Controller,
-    Event, EventSubscriber,
+    Command,
+    CommandDispatcher as CommandDp,
+    Event,
+    EventSubscriber as EventSub,
+    Handles,
     log::*,
     Peer, PeerId,
     Protocol,
@@ -25,6 +28,7 @@ use common::*;
 use async_std::task;
 use futures::stream::Stream;
 use futures::*;
+use futures::prelude::*;
 use futures::future::Future;
 use structopt::StructOpt;
 use stream_cancel::StreamExt;
@@ -37,51 +41,56 @@ fn main() {
 
     logger::init(log::LevelFilter::Debug);
 
-    let (controller, notifier) = netzwerk::init(config.clone());
+    let (command_dp, event_rx, handles) = netzwerk::init(config.clone());
 
-    task::spawn(notification_handler(notifier));
+    task::spawn(notification_handler(event_rx));
 
-    let node = Node::builder()
+    let mut node = Node::builder()
         .with_config(config)
-        .with_controller(controller)
+        .with_command_dispatcher(command_dp)
+        .with_handles(handles)
         .build();
 
-    node.init();
+    task::block_on(node.init());
 
-    logger::info("example", &format!("Created node [{}]", node.id()));
+    logger::info("", &format!("Created node [{}]", node.id()));
 
     node.wait_for_kill_signal();
 
     /*
     // TEMP: broadcast a message each second
-    for _ in 0..5 {
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        node.broadcast_msg(Utf8Message::new(&args.msg));
-    }
-
+    task::block_on(async {
+        for _ in 0..5 {
+            task::sleep(std::time::Duration::from_millis(1000)).await;
+            node.broadcast_msg(Utf8Message::new(&args.msg)).await;
+        }
+    });
     */
-    //node.shutdown();
+
+    task::block_on(node.shutdown());
 }
 
-async fn notification_handler(event_sink: EventSubscriber) {
-    while let Ok(event) = event_sink.recv() {
-        logger::info("example", &format!("Received event {:?}", event));
+async fn notification_handler(mut event_sub: EventSub) {
+    while let Some(event) = event_sub.next().await {
+        logger::info("", &format!("Received event {:?}", event));
     }
 }
 
 struct Node {
     config: Config,
-    controller: Controller,
+    command_dp: CommandDp,
+    handles: Handles,
 }
 
 impl Node {
 
-    pub fn init(&self) {
+    pub async fn init(&mut self) {
         for peer in self.config.peers().values() {
-            self.add_peer(peer.clone());
+            self.add_peer(peer.clone()).await;
         }
     }
 
+    // TODO: How can we not use Tokio, and just async_std?
     pub fn wait_for_kill_signal(&self) {
         let mut rt = tokio::runtime::Runtime::new().expect("error");
 
@@ -92,12 +101,12 @@ impl Node {
         &self.config.id
     }
 
-    pub fn add_peer(&self, peer: Peer) {
-        self.controller.send(Command::AddPeer { peer });
+    pub async fn add_peer(&mut self, peer: Peer) {
+        self.command_dp.dispatch(Command::AddPeer { peer }).await;
     }
 
-    pub fn remove_peer(&self, peer_id: PeerId) {
-        self.controller.send(Command::RemovePeer { peer_id });
+    pub async fn remove_peer(&mut self, peer_id: PeerId) {
+        self.command_dp.dispatch(Command::RemovePeer { peer_id }).await;
     }
 
     pub fn wait(&self, handles: Vec<task::JoinHandle<()>>) {
@@ -109,24 +118,22 @@ impl Node {
         */
     }
 
-    pub fn shutdown(mut self) {
+    pub async fn shutdown(mut self) {
         info!("Shutting down...");
 
-        self.controller.send(Command::Shutdown);
+        self.command_dp.dispatch(Command::Shutdown).await;
 
-        task::block_on(async {
-            for handle in self.controller.task_handles() {
-                handle.await;
-            }
-        })
+        for handle in self.handles.task_handles() {
+            handle.await;
+        }
     }
 
-    pub fn send_msg(&self, message: Utf8Message, peer_id: PeerId) {
-        self.controller.send(Command::SendBytes { receiver: peer_id, bytes: message.as_bytes() });
+    pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {
+        self.command_dp.dispatch(Command::SendBytes { receiver: peer_id, bytes: message.as_bytes() }).await;
     }
 
-    pub fn broadcast_msg(&self, message: Utf8Message) {
-        self.controller.send(Command::BroadcastBytes { bytes: message.as_bytes() });
+    pub async fn broadcast_msg(&mut self, message: Utf8Message) {
+        self.command_dp.dispatch(Command::BroadcastBytes { bytes: message.as_bytes() }).await;
     }
 
     pub fn builder() -> NodeBuilder {
@@ -136,14 +143,16 @@ impl Node {
 
 struct NodeBuilder {
     config: Option<Config>,
-    controller: Option<Controller>,
+    command_dp: Option<CommandDp>,
+    handles: Option<Handles>,
 }
 
 impl NodeBuilder {
     pub fn new() -> Self {
         Self {
             config: None,
-            controller: None,
+            command_dp: None,
+            handles: None,
         }
     }
 
@@ -152,15 +161,21 @@ impl NodeBuilder {
         self
     }
 
-    pub fn with_controller(mut self, controller: Controller) -> Self {
-        self.controller.replace(controller);
+    pub fn with_command_dispatcher(mut self, command_dp: CommandDp) -> Self {
+        self.command_dp.replace(command_dp);
+        self
+    }
+
+    pub fn with_handles(mut self, handles: Handles) -> Self {
+        self.handles.replace(handles);
         self
     }
 
     pub fn build(self) -> Node {
         Node {
             config: self.config.expect("NodeBuilder: no config specified"),
-            controller: self.controller.expect("NodeBuilder: no controller specified"),
+            command_dp: self.command_dp.expect("NodeBuilder: no command dispatcher specified"),
+            handles: self.handles.expect("NodeBuilder: no handles specified"),
         }
     }
 }

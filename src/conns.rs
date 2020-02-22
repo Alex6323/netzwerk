@@ -1,32 +1,32 @@
-use crate::commands::{Command, CommandReceiver};
+use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::peers::PeerId;
 use crate::tcp::TcpConnection;
 
 use async_trait::async_trait;
+use futures::prelude::*;
+use futures::{select, FutureExt};
 
 use std::collections::HashMap;
 use std::result;
 
 use log::*;
-use crossbeam_channel::select;
-
 
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
 
-pub type ConnectionResult<T> = result::Result<T, errors::ConnectionError>;
+pub type SendResult<T> = result::Result<T, errors::SendError>;
+pub type RecvResult<T> = result::Result<T, errors::RecvError>;
 
 // NOTE: using this attribute implies heap allocation.
 #[async_trait]
 pub trait RawConnection {
+
     fn peer_id(&self) -> PeerId;
 
-    // TODO: SendResult
-    async fn send(&mut self, bytes: Vec<u8>) -> ConnectionResult<Event>;
+    async fn send(&mut self, bytes: Vec<u8>) -> SendResult<Event>;
 
-    // TODO: RecvResult
-    async fn recv(&mut self) -> ConnectionResult<Event>;
+    async fn recv(&mut self) -> RecvResult<Event>;
 }
 
 pub struct Connections<C: RawConnection>(pub(crate) HashMap<PeerId, C>);
@@ -56,16 +56,16 @@ impl<C: RawConnection> Connections<C> {
         self.0.get_mut(peer_id)
     }
 
-    pub async fn broadcast(&mut self, bytes: Vec<u8>) -> ConnectionResult<()> {
+    pub async fn broadcast(&mut self, bytes: Vec<u8>) -> SendResult<()> {
         for (_, peer_conn) in &mut self.0 {
             peer_conn.send(bytes.clone()).await.expect("error broadcasting to peer");
         }
         Ok(())
     }
 
-    pub async fn send(&mut self, bytes: Vec<u8>, to_peer: &PeerId) -> ConnectionResult<Event> {
+    pub async fn send(&mut self, bytes: Vec<u8>, to_peer: &PeerId) -> SendResult<Event> {
         if !self.0.contains_key(to_peer) {
-            return Err(errors::ConnectionError::UnknownPeer);
+            return Err(errors::SendError::UnknownPeerError);
         }
 
         let peer_conn = self.0.get_mut(to_peer).unwrap();
@@ -73,9 +73,9 @@ impl<C: RawConnection> Connections<C> {
         Ok(peer_conn.send(bytes).await?)
     }
 
-    pub async fn recv(&mut self, from_peer: &PeerId) -> ConnectionResult<Event> {
+    pub async fn recv(&mut self, from_peer: &PeerId) -> RecvResult<Event> {
         if !self.0.contains_key(from_peer) {
-            return Err(errors::ConnectionError::UnknownPeer);
+            return Err(errors::RecvError::UnknownPeerError);
         }
 
         let peer_conn = self.0.get_mut(from_peer).unwrap();
@@ -87,7 +87,7 @@ impl<C: RawConnection> Connections<C> {
 pub mod actor {
     use super::*;
 
-    pub async fn run(command_rx: CommandReceiver, event_pub: EventPub, event_sub: EventSub) {
+    pub async fn run(mut command_rx: CommandRx, mut conn_rx: EventSub, mut conns_tx: EventPub) {
         debug!("[Conns] Starting actor");
 
         let mut tcp_conns: Connections<TcpConnection> = Connections::new();
@@ -96,7 +96,7 @@ pub mod actor {
         loop {
             select! {
                 // handle commands
-                recv(command_rx) -> command => {
+                command = command_rx.next().fuse() => {
                     let command = command.expect("error receiving command");
                     debug!("[Conns] Received: {:?}", command);
 
@@ -106,13 +106,13 @@ pub mod actor {
                             // when removing the connections associated sockets will be closed automatically (RAII)
                             let was_removed = tcp_conns.remove(&peer_id);
                             if was_removed {
-                                event_pub.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
+                                conns_tx.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
                             }
                             // === UDP ===
                             /*
                             let was_removed = udp_conns.remove(&peer_id);
                             if was_removed {
-                                event_pub.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
+                                conns_tx.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
                             }
                             */
 
@@ -155,13 +155,14 @@ pub mod actor {
                 },
 
                 // handle events
-                recv(event_sub) -> event => {
+                event = conn_rx.next().fuse() => {
                     let event = event.expect("error receiving event");
                     debug!("[Conns] Received: {:?}", event);
 
                     match event {
                         Event::PeerConnectedViaTCP { peer_id, tcp_conn } => {
                             // TODO
+                            info!("received PeerConnectedViaTCP event");
 
                         }
                         _ => (),

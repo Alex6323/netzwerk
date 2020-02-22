@@ -2,8 +2,9 @@ use crate::peers::{Peer, PeerId};
 
 use std::fmt;
 
-use async_std::task::JoinHandle;
-use crossbeam_channel as mpmc;
+use async_std::task;
+use futures::channel::mpsc;
+use futures::sink::SinkExt;
 
 const COMMAND_CHAN_CAPACITY: usize = 10;
 
@@ -42,47 +43,37 @@ impl fmt::Debug for Command {
             Command::AddPeer { peer } => write!(f, "AddPeer command <<{:?}>>", peer.id()),
             Command::RemovePeer { peer_id } => write!(f, "RemovePeer command <<{:?}>>", peer_id),
             Command::SendBytes { receiver, .. } => write!(f, "SendBytes command <<{:?}>>", receiver),
-            Command::BroadcastBytes { .. } => write!(f, "Broadcast command"),
+            Command::BroadcastBytes { .. } => write!(f, "BroadcastBytes command"),
             Command::Shutdown => write!(f, "Shutdown command"),
         }
     }
 }
 
-pub struct Controller {
-    sender: CommandSender,
-    task_handles: Vec<JoinHandle<()>>,
+pub(crate) type CommandSender = mpsc::Sender<Command>;
+pub type CommandReceiver = mpsc::Receiver<Command>;
+
+pub struct CommandDispatcher {
+    senders: Vec<CommandSender>,
 }
 
-impl Controller {
-    pub fn new(sender: CommandSender) -> Self {
-        Self {
-            sender,
-            task_handles: vec![],
+impl CommandDispatcher {
+
+    pub fn new() -> Self {
+        Self { senders: vec![] }
+    }
+
+    pub fn recv(&mut self) -> CommandReceiver {
+        let (sender, receiver) = mpsc::channel(1);
+
+        self.senders.push(sender);
+
+        receiver
+    }
+
+    pub async fn dispatch(&mut self, command: Command) {
+        // TODO: those commands can be dispatched concurrently
+        for sender in &mut self.senders {
+            sender.send(command.clone()).await.expect("error sending command");
         }
     }
-
-    pub fn task_handles(&mut self) -> &mut Vec<JoinHandle<()>> {
-        &mut self.task_handles
-    }
-
-    pub fn add_task(&mut self, handle: JoinHandle<()>) {
-        self.task_handles.push(handle);
-    }
-
-    pub fn send(&self, command: Command) {
-        self.sender.send(command.into()).expect("error sending command");
-    }
-
-    pub fn sender(&self) -> CommandSender {
-        self.sender.clone()
-    }
-}
-
-pub(crate) type CommandSender = mpmc::Sender<Command>;
-pub type CommandReceiver = mpmc::Receiver<Command>;
-
-pub fn channel() -> (Controller, CommandReceiver) {
-    let (sender, receiver) = mpmc::bounded::<Command>(COMMAND_CHAN_CAPACITY);
-
-    (Controller::new(sender), receiver)
 }
