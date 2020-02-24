@@ -12,12 +12,11 @@
 use netzwerk::{
     Config,
     Connections,
-    Command,
-    CommandDispatcher as CommandDp,
+    Command::*,
     Event,
     EventSubscriber as EventSub,
-    Handles,
     log::*,
+    NetControl,
     Peer, PeerId,
     Protocol,
     tcp::*,
@@ -25,7 +24,7 @@ use netzwerk::{
 
 use common::*;
 
-use async_std::task;
+use async_std::task::{self, spawn, block_on};
 use futures::stream::Stream;
 use futures::*;
 use futures::prelude::*;
@@ -41,60 +40,43 @@ fn main() {
 
     logger::init(log::LevelFilter::Debug);
 
-    let (command_dp, event_rx, handles) = netzwerk::init(config.clone());
-
-    task::spawn(notification_handler(event_rx));
+    let (net_control, net_events) = netzwerk::init(config.clone());
 
     let mut node = Node::builder()
         .with_config(config)
-        .with_command_dispatcher(command_dp)
-        .with_handles(handles)
+        .with_net_control(net_control)
         .build();
 
-    task::block_on(node.init());
+    spawn(notification_handler(net_events));
 
-    logger::info("", &format!("Created node [{}]", node.id()));
+    let msg = Utf8Message::new(&args.msg);
 
-    node.wait_for_kill_signal();
-
-    /*
-    // TEMP: broadcast a message each second
-    task::block_on(async {
-        for _ in 0..5 {
-            task::sleep(std::time::Duration::from_millis(1000)).await;
-            node.broadcast_msg(Utf8Message::new(&args.msg)).await;
-        }
-    });
-    */
-
-    task::block_on(node.shutdown());
+    block_on(node.init());
+    block_on(node.spam(msg, 5, 1000));
+    block_on(node.shutdown());
 }
 
-async fn notification_handler(mut event_sub: EventSub) {
-    while let Some(event) = event_sub.next().await {
-        logger::info("", &format!("Received event {:?}", event));
+async fn notification_handler(mut peer_events: EventSub) {
+    while let Some(event) = peer_events.next().await {
+        logger::info("", &format!("[Node ] Received event {:?}", event));
     }
 }
 
 struct Node {
     config: Config,
-    command_dp: CommandDp,
-    handles: Handles,
+    net_control: NetControl,
 }
 
 impl Node {
 
     pub async fn init(&mut self) {
+        info!("[Node ] Initializing...");
+
         for peer in self.config.peers().values() {
             self.add_peer(peer.clone()).await;
         }
-    }
 
-    // TODO: How can we not use Tokio, and just async_std?
-    pub fn wait_for_kill_signal(&self) {
-        let mut rt = tokio::runtime::Runtime::new().expect("error");
-
-        rt.block_on(tokio::signal::ctrl_c()).expect("error");
+        info!("[Node ] Initialized");
     }
 
     pub fn id(&self) -> &String {
@@ -102,57 +84,59 @@ impl Node {
     }
 
     pub async fn add_peer(&mut self, peer: Peer) {
-        self.command_dp.dispatch(Command::AddPeer { peer }).await;
+        self.net_control.send(AddPeer { peer }).await;
     }
 
     pub async fn remove_peer(&mut self, peer_id: PeerId) {
-        self.command_dp.dispatch(Command::RemovePeer { peer_id }).await;
-    }
-
-    pub fn wait(&self, handles: Vec<task::JoinHandle<()>>) {
-        debug!("Waiting for async tasks to finish...");
-        /*
-        task::block_on(async {
-            task::sleep(Duration::from_millis(5000)).await;
-        });
-        */
-    }
-
-    pub async fn shutdown(mut self) {
-        info!("Shutting down...");
-
-        self.command_dp.dispatch(Command::Shutdown).await;
-
-        for handle in self.handles.task_handles() {
-            handle.await;
-        }
+        self.net_control.send(RemovePeer { peer_id }).await;
     }
 
     pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {
-        self.command_dp.dispatch(Command::SendBytes { receiver: peer_id, bytes: message.as_bytes() }).await;
+        self.net_control.send(SendBytes { receiver: peer_id, bytes: message.as_bytes() }).await;
     }
 
     pub async fn broadcast_msg(&mut self, message: Utf8Message) {
-        self.command_dp.dispatch(Command::BroadcastBytes { bytes: message.as_bytes() }).await;
+        self.net_control.send(BroadcastBytes { bytes: message.as_bytes() }).await;
     }
+
+    pub async fn shutdown(mut self) {
+        self.block_on_ctrl_c();
+
+        info!("[Node ] Shutting down...");
+
+        self.net_control.send(Shutdown).await;
+        self.net_control.finish_tasks().await;
+    }
+
+    fn block_on_ctrl_c(&self) {
+        let mut rt = tokio::runtime::Runtime::new().expect("error");
+
+        rt.block_on(tokio::signal::ctrl_c()).expect("error");
+    }
+
 
     pub fn builder() -> NodeBuilder {
         NodeBuilder::new()
+    }
+
+    pub async fn spam(&mut self, msg: Utf8Message, num: usize, interval: u64) {
+        for _ in 0..num {
+            task::sleep(std::time::Duration::from_millis(interval)).await;
+            self.broadcast_msg(msg.clone()).await;
+        }
     }
 }
 
 struct NodeBuilder {
     config: Option<Config>,
-    command_dp: Option<CommandDp>,
-    handles: Option<Handles>,
+    net_control: Option<NetControl>,
 }
 
 impl NodeBuilder {
     pub fn new() -> Self {
         Self {
             config: None,
-            command_dp: None,
-            handles: None,
+            net_control: None,
         }
     }
 
@@ -161,21 +145,22 @@ impl NodeBuilder {
         self
     }
 
-    pub fn with_command_dispatcher(mut self, command_dp: CommandDp) -> Self {
-        self.command_dp.replace(command_dp);
+    pub fn with_net_control(mut self, net_control: NetControl) -> Self {
+        self.net_control.replace(net_control);
         self
     }
 
+    /*
     pub fn with_handles(mut self, handles: Handles) -> Self {
         self.handles.replace(handles);
         self
     }
+    */
 
     pub fn build(self) -> Node {
         Node {
-            config: self.config.expect("NodeBuilder: no config specified"),
-            command_dp: self.command_dp.expect("NodeBuilder: no command dispatcher specified"),
-            handles: self.handles.expect("NodeBuilder: no handles specified"),
+            config: self.config.expect("NodeBuilder: no config"),
+            net_control: self.net_control.expect("NodeBuilder: no net-control"),
         }
     }
 }

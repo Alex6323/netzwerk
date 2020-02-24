@@ -153,50 +153,82 @@ impl Default for PeerState {
     }
 }
 
-pub mod actor {
-    use super::*;
+const RECONNECT_COOLDOWN: u64 = 1000;
 
-    const RECONNECT_COOLDOWN: u64 = 1000;
+/// Starts the peers actor.
+pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut peers_tx: EventPub) {
+    debug!("[Peers] Starting actor");
 
-    /// Starts the peers actor.
-    pub async fn run(mut command_rx: CommandRx, mut peers_rx: EventSub, mut peers_tx: EventPub) {
-        debug!("[Peers] Starting actor");
+    let mut peers = Peers::new();
 
-        let mut peers = Peers::new();
+    loop {
+        select! {
+            // Handle commands
+            command = command_rx.next().fuse() => {
+                let command = command.expect("error receiving command");
+                debug!("[Peers] Received: {:?}", command);
 
-        loop {
-            select! {
-                // Handle commands
-                command = command_rx.next().fuse() => {
-                    let command = command.expect("error receiving command");
-                    debug!("[Peers] Received: {:?}", command);
+                match command {
+                    Command::AddPeer { mut peer } => {
+                        peers.add(peer.clone());
 
-                    match command {
-                        Command::AddPeer { peer } => {
-                            peers.add(peer.clone());
+                        peers_tx.send(Event::PeerAdded { peer: peer.clone(), num_peers: peers.num() }.into());
 
-                            peers_tx.send(Event::PeerAdded { peer: peer.clone(), num_peers: peers.num() }.into());
-                        },
-                        Command::RemovePeer { peer_id } => {
-                            peers.remove(&peer_id);
-
-                            peers_tx.send(Event::PeerRemoved { peer_id }.into());
-                        },
-                        Command::Shutdown => {
-                            drop(peers);
-                            break
+                        if peer.is_not_connected() {
+                            if let Some(stream) = connect_to_peer(&mut peer).await {
+                                peers_tx.send(Event::PeerConnectedViaTCP {
+                                    peer_id: peer.id(),
+                                    tcp_conn: TcpConnection::new(stream),
+                                }.into());
+                            } else {
+                                peers_tx.send(Event::PeerDisconnected {
+                                    peer_id: peer.id(),
+                                    reconnect: Some(RECONNECT_COOLDOWN)
+                                });
+                            }
                         }
-                        _ => (),
+                    },
+                    Command::RemovePeer { peer_id } => {
+                        peers.remove(&peer_id);
+
+                        peers_tx.send(Event::PeerRemoved { peer_id }.into());
+                    },
+                    Command::Shutdown => {
+                        drop(peers);
+                        break
                     }
-                },
+                    _ => (),
+                }
+            },
 
-                // handle events
-                event = peers_rx.next().fuse() => {
-                    let event = event.expect("error receiving event");
-                    debug!("[Peers] Received: {:?}", event);
+            // handle events
+            event = event_sub.next().fuse() => {
+                let event = event.expect("error receiving event");
+                debug!("[Peers] Received: {:?}", event);
 
-                    match event {
-                        Event::PeerAdded { mut peer, .. } => {
+                match event {
+                    Event::PeerAdded { mut peer, .. } => {
+                        //
+                    },
+                    Event::PeerDisconnected { peer_id, reconnect } => {
+                        // check, if we want to reconnect
+                        // TODO: allow to specify maximum number of reconnect attempts
+                        if let Some(duration) = reconnect {
+                            let mut peers_tx = peers_tx.clone();
+
+                            // wait for some time, then try to reconnect
+                            task::spawn(async move {
+                                task::sleep(Duration::from_millis(duration)).await;
+                                info!("raising reconnect event");
+                                peers_tx.send(Event::TryReconnect {
+                                    peer_id,
+                                });
+
+                            });
+                        }
+                    },
+                    Event::TryReconnect { peer_id } => {
+                        if let Some(mut peer) = peers.get_mut(&peer_id) {
                             if peer.is_not_connected() {
                                 if let Some(stream) = connect_to_peer(&mut peer).await {
                                     peers_tx.send(Event::PeerConnectedViaTCP {
@@ -210,78 +242,46 @@ pub mod actor {
                                     });
                                 }
                             }
-                        },
-                        Event::PeerDisconnected { peer_id, reconnect } => {
-                            // check, if we want to reconnect
-                            // TODO: allow to specify maximum number of reconnect attempts
-                            if let Some(duration) = reconnect {
-                                let mut peers_tx = peers_tx.clone();
-
-                                // wait for some time, then try to reconnect
-                                task::spawn(async move {
-                                    task::sleep(Duration::from_millis(duration)).await;
-                                    info!("raising reconnect event");
-                                    peers_tx.send(Event::TryReconnect {
-                                        peer_id,
-                                    });
-
-                                });
-                            }
-                        },
-                        Event::TryReconnect { peer_id } => {
-                            if let Some(mut peer) = peers.get_mut(&peer_id) {
-                                if peer.is_not_connected() {
-                                    if let Some(stream) = connect_to_peer(&mut peer).await {
-                                        peers_tx.send(Event::PeerConnectedViaTCP {
-                                            peer_id: peer.id(),
-                                            tcp_conn: TcpConnection::new(stream),
-                                        }.into());
-                                    } else {
-                                        peers_tx.send(Event::PeerDisconnected {
-                                            peer_id: peer.id(),
-                                            reconnect: Some(RECONNECT_COOLDOWN)
-                                        });
-                                    }
-                                }
-                            }
-
                         }
-                        _ => (),
+
                     }
+                    _ => (),
                 }
             }
         }
-
-        debug!("[Peers] Stopping actor");
     }
 
-    async fn connect_to_peer(peer: &mut Peer) -> Option<TcpStream> {
-        match peer.url() {
-            // === TCP ===
-            Url::Tcp(peer_addr) => {
-                match TcpStream::connect(peer_addr).await {
-                    Ok(stream) => {
-                        peer.set_state(PeerState::Connected);
+    debug!("[Peers] Stopping actor");
+}
 
-                        let peer_id = PeerId(stream.peer_addr()
-                            .expect("error unwrapping remote address from TCP stream"));
+async fn connect_to_peer(peer: &mut Peer) -> Option<TcpStream> {
 
-                        // TODO: can this happen? when? What should we do then?
-                        if peer.id() != peer_id {
-                            warn!("Something fishy is going on. Non matching peer ids.");
-                        }
+    match peer.url() {
+        // === TCP ===
+        Url::Tcp(peer_addr) => {
+            info!("[Peers] Trying to connect to peer: {:?} via TCP", peer.id());
+            match TcpStream::connect(peer_addr).await {
+                Ok(stream) => {
+                    peer.set_state(PeerState::Connected);
 
-                        Some(stream)
-                    },
-                    Err(_) => None,
-                }
+                    let peer_id = PeerId(stream.peer_addr()
+                        .expect("error unwrapping remote address from TCP stream"));
 
-            },
-            // === UDP ===
-            Url::Udp(peer_addr) => {
-                // TODO
-                None
+                    // TODO: can this happen? when? What should we do then?
+                    if peer.id() != peer_id {
+                        warn!("Something fishy is going on. Non matching peer ids.");
+                    }
+
+                    Some(stream)
+                },
+                Err(_) => None,
             }
+
+        },
+        // === UDP ===
+        Url::Udp(peer_addr) => {
+            // TODO
+            None
         }
     }
 }

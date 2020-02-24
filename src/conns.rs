@@ -84,93 +84,91 @@ impl<C: RawConnection> Connections<C> {
     }
 }
 
-pub mod actor {
-    use super::*;
+use super::*;
 
-    pub async fn run(mut command_rx: CommandRx, mut conn_rx: EventSub, mut conns_tx: EventPub) {
-        debug!("[Conns] Starting actor");
+pub async fn actor(mut command_rx: CommandRx, mut conn_rx: EventSub, mut conns_tx: EventPub) {
+    debug!("[Conns] Starting actor");
 
-        let mut tcp_conns: Connections<TcpConnection> = Connections::new();
-        //let mut udp_conns = Connections::new();
+    let mut tcp_conns: Connections<TcpConnection> = Connections::new();
+    //let mut udp_conns = Connections::new();
 
-        loop {
-            select! {
-                // handle commands
-                command = command_rx.next().fuse() => {
-                    let command = command.expect("error receiving command");
-                    debug!("[Conns] Received: {:?}", command);
+    loop {
+        select! {
+            // handle commands
+            command = command_rx.next().fuse() => {
+                let command = command.expect("error receiving command");
+                debug!("[Conns] Received: {:?}", command);
 
-                    match command {
-                        Command::RemovePeer { peer_id } => {
-                            // === TCP ===
-                            // when removing the connections associated sockets will be closed automatically (RAII)
-                            let was_removed = tcp_conns.remove(&peer_id);
-                            if was_removed {
-                                conns_tx.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
-                            }
-                            // === UDP ===
-                            /*
-                            let was_removed = udp_conns.remove(&peer_id);
-                            if was_removed {
-                                conns_tx.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
-                            }
-                            */
-
-                        },
-                        Command::SendBytes { receiver, bytes } => {
-                            // === TCP ===
-                            // FIXME: error handling
-                            if let Some(conn) = tcp_conns.get_mut(&receiver) {
-                                //conn.send(bytes.clone()).await.expect("error sending message using TCP");
-
-                            }
-                            // === UDP ===
-                            /*
-                            else if let Some(conn) = udp_conns.get_mut(&receiver) {
-                                //conn.send(bytes.clone()).await.expect("error sending message using UDP");
-                            }
-                            */
+                match command {
+                    Command::RemovePeer { peer_id } => {
+                        // === TCP ===
+                        // when removing the connections associated sockets will be closed automatically (RAII)
+                        let was_removed = tcp_conns.remove(&peer_id);
+                        if was_removed {
+                            conns_tx.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
                         }
-                        Command::BroadcastBytes { bytes } => {
-                            // === TCP ===
-                            // FIXME: error handling
-                            if tcp_conns.num() > 0 {
-                                //tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
-                            }
-
-                            // === UDP ===
-                            /*
-                            if udp_conns.num() > 0 {
-                                //udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
-                            }
-                            */
+                        // === UDP ===
+                        /*
+                        let was_removed = udp_conns.remove(&peer_id);
+                        if was_removed {
+                            conns_tx.send(Event::PeerDisconnected { peer_id, reconnect: None }.into());
                         }
-                        Command::Shutdown => {
-                            drop(tcp_conns);
-                            //drop(udp_conns);
-                            break
-                        },
-                        _ => (),
+                        */
+
+                    },
+                    Command::SendBytes { receiver, bytes } => {
+                        // === TCP ===
+                        // FIXME: error handling
+                        if let Some(conn) = tcp_conns.get_mut(&receiver) {
+                            conn.send(bytes.clone()).await.expect("error sending message using TCP");
+
+                        }
+                        // === UDP ===
+                        /*
+                        else if let Some(conn) = udp_conns.get_mut(&receiver) {
+                            conn.send(bytes.clone()).await.expect("error sending message using UDP");
+                        }
+                        */
                     }
-                },
-
-                // handle events
-                event = conn_rx.next().fuse() => {
-                    let event = event.expect("error receiving event");
-                    debug!("[Conns] Received: {:?}", event);
-
-                    match event {
-                        Event::PeerConnectedViaTCP { peer_id, tcp_conn } => {
-                            // TODO
-                            info!("received PeerConnectedViaTCP event");
-
+                    Command::BroadcastBytes { bytes } => {
+                        // === TCP ===
+                        // FIXME: error handling
+                        if tcp_conns.num() > 0 {
+                            tcp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using TCP");
                         }
-                        _ => (),
+
+                        // === UDP ===
+                        /*
+                        if udp_conns.num() > 0 {
+                            //udp_conns.broadcast(bytes.clone()).await.expect("error broadcasting message using UDP");
+                        }
+                        */
                     }
+                    Command::Shutdown => {
+                        drop(tcp_conns);
+                        //drop(udp_conns);
+                        break
+                    },
+                    _ => (),
+                }
+            },
+
+            // handle events
+            event = conn_rx.next().fuse() => {
+                let event = event.expect("error receiving event");
+                debug!("[Conns] Received: {:?}", event);
+
+                match event {
+                    Event::PeerConnectedViaTCP { peer_id, tcp_conn } => {
+                        // TODO
+                        info!("received PeerConnectedViaTCP event");
+
+                    }
+                    _ => (),
                 }
             }
         }
-
-        debug!("[Conns] Stopping actor");
     }
+
+    debug!("[Conns] Stopping actor");
 }

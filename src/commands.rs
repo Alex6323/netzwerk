@@ -5,8 +5,12 @@ use std::fmt;
 use async_std::task;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
+use futures::prelude::*;
 
-const COMMAND_CHAN_CAPACITY: usize = 10;
+use std::collections::HashMap;
+
+// NOTE: For now, we really want commands to be executed with high backpressure
+const COMMAND_CHAN_CAPACITY: usize = 1;
 
 /// `Command`s can be used to control the networking layer from higher layers.
 #[derive(Clone)]
@@ -33,6 +37,14 @@ pub enum Command {
         bytes: Vec<u8>,
     },
 
+    /*
+    /// Applies a modifier to the specified peer.
+    ModifyPeer {
+        peer_id: PeerId,
+        f: FnMut(&mut Peer),
+    },
+    */
+
     /// Shuts down the system.
     Shutdown,
 }
@@ -50,30 +62,133 @@ impl fmt::Debug for Command {
 }
 
 pub(crate) type CommandSender = mpsc::Sender<Command>;
-pub type CommandReceiver = mpsc::Receiver<Command>;
+pub(crate) type CommandReceiver = mpsc::Receiver<Command>;
+
+pub(crate) fn channel() -> (CommandSender, CommandReceiver) {
+    mpsc::channel(COMMAND_CHAN_CAPACITY)
+}
 
 pub struct CommandDispatcher {
-    senders: Vec<CommandSender>,
+    senders: HashMap<String, CommandSender>,
 }
 
 impl CommandDispatcher {
 
     pub fn new() -> Self {
-        Self { senders: vec![] }
+        Self { senders: HashMap::new() }
     }
 
-    pub fn recv(&mut self) -> CommandReceiver {
-        let (sender, receiver) = mpsc::channel(1);
+    pub fn register(&mut self, address: &str) -> CommandReceiver {
+        let (sender, receiver) = channel();
 
-        self.senders.push(sender);
+        self.senders.insert(address.to_string(), sender);
 
         receiver
     }
 
-    pub async fn dispatch(&mut self, command: Command) {
+    /*
+    pub async fn broadcast(&mut self, command: Command) -> CommandResult {
         // TODO: those commands can be dispatched concurrently
-        for sender in &mut self.senders {
+        for (_, sender) in &mut self.senders {
             sender.send(command.clone()).await.expect("error sending command");
         }
+    }
+
+    pub async fn send_to_one(&mut self, command: Command, addr: &str) -> CommandResult {
+        if !self.senders.contains_key(addr) {
+            return;
+        }
+        let mut sender = self.senders.get_mut(addr).unwrap();
+        sender.send(command).await.expect("error sending command");
+    }
+    */
+
+    pub fn send<'a>(&'a mut self, command: Command) -> CommandSend<'a> {
+        CommandSend {
+            senders: &mut self.senders,
+            command,
+        }
+    }
+}
+
+type CommandSendResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+// use Actor::*;
+// command_dp.send(Command::Shutdown).to(All);
+// command_dp.send(Command::AddPeer { peer }).to(One("peers"));
+// command_dp.send(Command::RemovePeer { peer_id }).to(Many("peers", "conns"));
+
+pub struct CommandSend<'a> {
+    senders: &'a mut HashMap<String, CommandSender>,
+    command: Command,
+}
+
+impl<'a> CommandSend<'a> {
+    pub async fn to(self, actor: Actor) {
+        match actor {
+            Actor::All => {
+                // TODO: those commands can be dispatched concurrently
+                for (_, sender) in self.senders {
+                    sender.send(self.command.clone()).await.expect("error sending command");
+                }
+            },
+            Actor::One(id) => {
+                if !self.senders.contains_key(&id[..]) {
+                    return;
+                }
+                let sender = self.senders.get_mut(&id[..]).unwrap();
+                sender.send(self.command).await.expect("error sending command");
+            }
+            Actor::Many(ids) => {
+                for id in ids {
+                    if self.senders.contains_key(&id[..]) {
+                        let sender = self.senders.get_mut(&id[..]).unwrap();
+                        sender.send(self.command.clone()).await.expect("error sending command");
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub enum Actor {
+    All,
+    One(String),
+    Many(Vec<String>),
+}
+
+/// Starts the `commands` actor. It's purpose is to receive `Command`s from the user
+/// and dispatch them using internal knowledge about which actor needs to respond to
+/// which command. If this is not done this way, then either all commands would need
+/// to be broadcasted to all actors, which is an overhead we cannot accept, or we
+/// would need to leak internal details as the user would need to know which actors
+/// exist in the system.
+pub async fn actor(mut command_rx: CommandReceiver) {
+    while let Some(command) = command_rx.next().await {
+        match command {
+            Command::AddPeer { peer } => {
+                // forward this to `peers`.
+            },
+            Command::RemovePeer { peer_id } => {
+                // forward this to `peers`.
+            },
+            _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_command_dispatcher() {
+        let command_dp = CommandDispatcher::new();
+
+        let actor_a_rx = command_dp.register("actor_a");
+        let actor_b_rx = command_dp.register("actor_b");
+
+        task::block_on(async {
+            command_dp.send(Command::Shutdown).to(Actor::All).await;
+        });
     }
 }

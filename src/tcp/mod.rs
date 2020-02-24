@@ -80,55 +80,51 @@ impl RawConnection for TcpConnection {
     }
 }
 
-pub mod actor {
-    use super::*;
+/// Starts the TCP socket actor.
+pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut event_pub: EventPub) {
+    debug!("[TCP  ] Starting actor");
 
-    /// Starts the TCP socket actor.
-    pub async fn run(binding_addr: SocketAddr, mut command_rx: CommandRx, mut event_pub: EventPub) {
-        debug!("[TCP  ] Starting actor");
+    let listener = TcpListener::bind(binding_addr).await.expect("error binding TCP listener");
+    debug!("[TCP  ] Bound to {}",
+        listener.local_addr().expect("error reading local address from TCP socket"));
 
-        let listener = TcpListener::bind(binding_addr).await.expect("error binding TCP listener");
-        debug!("[TCP  ] Bound to {}",
-            listener.local_addr().expect("error reading local address from TCP socket"));
+    debug!("[TCP  ] Accepting TCP clients");
+    let mut incoming = listener.incoming();
 
-        debug!("[TCP  ] Accepting TCP clients");
-        let mut incoming = listener.incoming();
+    // NOTE: 'fuse' ensures 'None' forever after the first 'None'
+    loop {
+        select! {
+            // Handle connection requests
+            stream = incoming.next().fuse() => {
+                if let Some(stream) = stream {
+                    let stream = stream.expect("error unwrapping TCP stream");
+                    debug!("[TCP  ] Successfully connected peer");
 
-        // NOTE: 'fuse' ensures 'None' forever after the first 'None'
-        loop {
-            select! {
-                // Handle connection requests
-                stream = incoming.next().fuse() => {
-                    if let Some(stream) = stream {
-                        let stream = stream.expect("error unwrapping TCP stream");
-                        debug!("[TCP  ] Successfully connected peer");
+                    let peer_id = PeerId(stream.peer_addr().expect("error creating peer id"));
+                    let tcp_conn = TcpConnection::new(stream);
 
-                        let peer_id = PeerId(stream.peer_addr().expect("error creating peer id"));
-                        let tcp_conn = TcpConnection::new(stream);
-
-                        // TODO: create a new actor for each connection which uses `mpsc` channel
-                        event_pub.send(
-                            Event::PeerConnectedViaTCP {
-                                peer_id,
-                                tcp_conn,
-                            }.into()).await.expect("error sending event");
+                    // TODO: create a new actor for each connection which uses `mpsc` channel
+                    event_pub.send(
+                        Event::PeerConnectedViaTCP {
+                            peer_id,
+                            tcp_conn,
+                        }.into()).await.expect("error sending event");
+                }
+            },
+            // Handle API commands
+            command = command_rx.next().fuse() => {
+                if let Some(command) = command {
+                    debug!("[TCP  ] Received: {:?}", command);
+                    match command {
+                        Command::Shutdown => {
+                            break;
+                        },
+                        _ => (),
                     }
-                },
-                // Handle API commands
-                command = command_rx.next().fuse() => {
-                    if let Some(command) = command {
-                        debug!("[TCP  ] Received: {:?}", command);
-                        match command {
-                            Command::Shutdown => {
-                                break;
-                            },
-                            _ => (),
-                        }
-                    }
-                },
-            }
+                }
+            },
         }
-
-        debug!("[TCP  ] Stopping actor");
     }
+
+    debug!("[TCP  ] Stopping actor");
 }

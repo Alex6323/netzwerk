@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Utf8Message {
     data: String,
 }
