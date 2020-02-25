@@ -1,4 +1,5 @@
-use crate::address::Address;
+use crate::address::{Address, Protocol};
+use crate::conns::ByteSender;
 use crate::peers::PeerId;
 
 use std::fmt;
@@ -21,23 +22,28 @@ pub enum Event {
     /// Raised when a peer was removed. No further attempts will be made to connect to that peer.
     PeerRemoved {
         peer_id: PeerId,
+        //num_peers: usize,
     },
 
-    /// Raised when a peer is connected or reconnected via TCP.
-    PeerConnectedOverTcp {
+    /// Raised when a peer was accepted.
+    PeerAccepted {
         peer_id: PeerId,
+        protocol: Protocol,
+        sender: ByteSender,
     },
 
-    /// Raised when a peer is connected or reconnected via UDP.
-    PeerConnectedOverUdp {
+    /// Raised when a peer is connected.
+    PeerConnected {
         peer_id: PeerId,
-        address: Address,
+        //address: Address,
+        //num_connections: usize,
     },
 
     /// Raised when a peer was disconnected.
     PeerDisconnected {
         peer_id: PeerId,
         reconnect: Option<u64>,
+        //num_connections: usize,
     },
 
     /// Raised when no packet was received from this peer for some time.
@@ -64,10 +70,9 @@ pub enum Event {
         bytes: Vec<u8>,
     },
 
-    /// Raised when the system should to try to connect or reconnect to a peer after a certain delay.
+    /// Raised when the system should to try to (re)connect to a peer after a certain delay.
     TryConnect {
         peer_id: PeerId,
-        after: u64,
     }
 }
 
@@ -80,11 +85,16 @@ impl fmt::Debug for Event {
             Event::PeerRemoved { peer_id } =>
                 write!(f, "Event::PeerRemoved  {{ peer_id = {:?} }}", peer_id),
 
-            Event::PeerConnectedOverTcp { peer_id } =>
+            Event::PeerAccepted { peer_id, protocol, .. } =>
+                write!(f, "Event::Accepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
+
+            Event::PeerConnected { peer_id } =>
                 write!(f, "Event::PeerConnectedOverTcp: {{ peer_id = {:?} }}", peer_id),
 
+            /*
             Event::PeerConnectedOverUdp { peer_id, address } =>
                 write!(f, "Event::PeerConnectedOverUdp {{  peer_id = {:?}, address = {:?}", peer_id, address),
+            */
 
             Event::PeerDisconnected { peer_id, reconnect } =>
                 write!(f, "Event::PeerDisconnected: {{ peer_id = {:?}, reconnect = {:?} }}", peer_id, reconnect),
@@ -101,7 +111,10 @@ impl fmt::Debug for Event {
             Event::BytesReceived { num_bytes, from, .. } =>
                 write!(f, "Event::BytesReceived {{ num_bytes = {:?}, from = {:?} }}", num_bytes, from),
 
-            Event::TryConnect { peer_id, after } =>
+            //Event::TryConnect { peer_id, after } =>
+                //write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),
+
+            Event::TryConnect { peer_id } =>
                 write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),
         }
     }

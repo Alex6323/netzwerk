@@ -3,6 +3,7 @@ use crate::events::Event;
 use crate::peers::PeerId;
 
 use async_trait::async_trait;
+use futures::channel::mpsc;
 
 use std::collections::HashMap;
 use std::result;
@@ -76,6 +77,15 @@ impl<C: RawConnection> Connections<C> {
 
         Ok(peer_conn.recv().await?)
     }
+}
+
+const WIRE_CHAN_CAPACITY: usize = 10000;
+
+pub type ByteSender = mpsc::Sender<Vec<u8>>;
+pub type ByteReceiver = mpsc::Receiver<Vec<u8>>;
+
+pub fn channel() -> (ByteSender, ByteReceiver) {
+    mpsc::channel(WIRE_CHAN_CAPACITY)
 }
 
 /*

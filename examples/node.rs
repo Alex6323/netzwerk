@@ -52,7 +52,9 @@ fn main() {
     let msg = Utf8Message::new(&args.msg);
 
     block_on(node.init());
-    //block_on(node.spam(msg, 5, 1000));
+
+    //task::spawn(node.spam(msg, 50, 15000));
+
     block_on(node.shutdown());
 }
 
@@ -92,7 +94,7 @@ impl Node {
     }
 
     pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {
-        self.net_control.send(SendBytes { receiver: peer_id, bytes: message.as_bytes() }).await;
+        self.net_control.send(SendBytes { to: peer_id, bytes: message.as_bytes() }).await;
     }
 
     pub async fn broadcast_msg(&mut self, message: Utf8Message) {

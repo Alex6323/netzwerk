@@ -70,8 +70,8 @@ impl fmt::Debug for Command {
             Command::RemovePeer { peer_id } =>
                 write!(f, "Command::RemovePeer {{ peer_id = {:?} }}", peer_id),
 
-            Command::SendBytes { receiver, .. } =>
-                write!(f, "Command::SendBytes {{ receiver = {:?} }}", receiver),
+            Command::SendBytes { to, .. } =>
+                write!(f, "Command::SendBytes {{ to = {:?} }}", to),
 
             Command::BroadcastBytes { .. } =>
                 write!(f, "Command::BroadcastBytes"),

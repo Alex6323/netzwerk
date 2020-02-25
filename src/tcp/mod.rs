@@ -1,5 +1,5 @@
-use crate::address::Address;
-use crate::conns::{MAX_BUFFER_SIZE, RecvResult, RawConnection, SendResult};
+use crate::address::{Address, Protocol};
+use crate::conns::{ByteReceiver, MAX_BUFFER_SIZE, RecvResult, RawConnection, self, SendResult};
 use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::events::{Event, EventPublisher as EventPub};
 use crate::peers::PeerId;
@@ -54,11 +54,9 @@ impl RawConnection for TcpConnection {
 
     async fn send(&mut self, bytes: Vec<u8>) -> SendResult<Event> {
         let mut stream = &*self.0;
-        //let num_bytes = stream.write(&bytes).await
-            //.expect("error sending bytes over TCP");
 
         stream.write_all(&bytes).await
-            .expect("error sending bytes over TCP");
+            .expect("[TCP  ] Error writing bytes to stream");
 
         Ok(Event::BytesSent {
             num_bytes: bytes.len(),
@@ -71,7 +69,7 @@ impl RawConnection for TcpConnection {
         let mut stream = &*self.0;
 
         let num_bytes = stream.read(&mut bytes).await
-            .expect("error receiving bytes over TCP");
+            .expect("[TCP  ] Error reading bytes from stream");
 
         Ok(Event::BytesReceived {
             num_bytes,
@@ -108,12 +106,17 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
 
                     let conn = TcpConnection::new(stream);
 
-                    spawn(conn_actor(conn, event_pub.clone()));
+                    let (sender, receiver) = conns::channel();
+
+                    spawn(conn_actor(conn, receiver, event_pub.clone()));
 
                     event_pub.send(
-                        Event::PeerConnectedOverTcp {
+                        Event::PeerAccepted {
                             peer_id,
-                        }.into()).await.expect("error sending event");
+                            protocol: Protocol::Tcp,
+                            sender,
+                        }).await
+                        .expect("[TCP  ] Error sending event");
                 }
             },
             // Handle API commands
@@ -154,11 +157,25 @@ pub async fn try_connect(peer_id: &PeerId, peer_addr: &SocketAddr) -> Option<Tcp
     }
 }
 
-pub async fn conn_actor(mut conn: TcpConnection, mut event_pub: EventPub) {
+pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut event_pub: EventPub) {
     debug!("[TCP  ] Starting connection actor");
-    //
-    while let Ok(bytes) = conn.recv().await {
-        //
+
+    // NOTE: currently the only way to break out of this loop is if all senders are dropped
+    loop {
+
+        select! {
+            bytes_in = conn.recv().fuse() => {
+                event_pub.send(bytes_in.expect("[TCP  ] Error receiving bytes"));
+            },
+
+            bytes_out = bytes_rx.next().fuse() => {
+                if let Some(bytes_out) = bytes_out {
+                    let event = conn.send(bytes_out).await.expect("[TCP  ] Error sending bytes");
+
+                    event_pub.send(event);
+                }
+            }
+        }
     }
 
     debug!("[TCP  ] Stopping connection actor");

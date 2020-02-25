@@ -1,13 +1,15 @@
 use crate::address::{Url, Protocol};
 use crate::commands::{Command, CommandReceiver as CommandRx};
+use crate::conns::{self, ByteSender};
 use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
 
 use async_std::net::SocketAddr;
 use async_std::task::{self, spawn};
-use futures::prelude::*;
+use async_std::prelude::*;
 use futures::{select, FutureExt};
+use futures::sink::SinkExt;
 use log::*;
 
 use std::collections::HashMap;
@@ -160,12 +162,12 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
     debug!("[Peers] Starting actor");
 
     let mut peers = Peers::new();
-    let mut tcp_conns: HashMap<PeerId, SocketAddr> = HashMap::new();
-    //let mut udp_conns: HashMap<PeerId, SocketAddr> = HashMap::new();
+    let mut tcp_conns: HashMap<PeerId, ByteSender> = HashMap::new();
+    let mut udp_conns: HashMap<PeerId, ByteSender> = HashMap::new();
 
     loop {
         select! {
-            // Handle commands
+            // === handle commands ===
             command = command_rx.next().fuse() => {
                 let command = command.expect("[Peers] Error receiving command");
                 debug!("[Peers] Received {:?}", command);
@@ -178,42 +180,71 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             peer_id: peer.id(),
                             num_peers: peers.num() }.into()).await;
 
+                        // Immediatedly try to connect to that peer
                         event_pub.send(Event::TryConnect {
                             peer_id: peer.id(),
-                            after: 0, // NOTE: immediatedly try to connect
                         }).await;
                     },
                     Command::RemovePeer { peer_id } => {
                         peers.remove(&peer_id);
+                        tcp_conns.remove(&peer_id);
+                        udp_conns.remove(&peer_id);
 
                         event_pub.send(Event::PeerRemoved { peer_id }.into()).await;
                     },
                     Command::SendBytes { to, bytes } => {
-                        // TODO
+                        if let Some(sender) = tcp_conns.get_mut(&to) {
+                            sender.send(bytes).await;
+                        } else if let Some(sender) = udp_conns.get_mut(&to) {
+                            sender.send(bytes).await;
+                        }
                     },
                     Command::BroadcastBytes { bytes } => {
-                        // TODO
+                        // TODO: send concurrently
+                        for (_, sender) in tcp_conns.iter_mut() {
+                            sender.send(bytes.clone()).await;
+                        }
+                        for (_, sender) in udp_conns.iter_mut() {
+                            sender.send(bytes.clone()).await;
+                        }
                     },
                     Command::Shutdown => {
                         drop(peers);
                         drop(tcp_conns);
-                        //drop(udp_conns);
+                        drop(udp_conns);
                         break
                     }
-                    _ => (),
                 }
             },
 
-            // handle events
+            // === handle events ===
             event = event_sub.next().fuse() => {
-                if let Some(event) = event { //.expect("[Peers] Error receiving event");
+                if let Some(event) = event {
                     debug!("[Peers] Received {:?}", event);
 
                     match event {
                         Event::PeerAdded { .. } => (),
                         Event::PeerRemoved { .. } => (),
-                        Event::PeerConnectedOverTcp { peer_id } |
-                        Event::PeerConnectedOverUdp { peer_id, .. } => {
+                        Event::PeerAccepted { peer_id, protocol, sender } => {
+                            match protocol {
+                                Protocol::Tcp => {
+                                    if tcp_conns.contains_key(&peer_id) {
+                                        continue;
+                                    }
+                                    tcp_conns.insert(peer_id, sender);
+                                },
+                                Protocol::Udp => {
+                                    if udp_conns.contains_key(&peer_id) {
+                                        continue;
+                                    }
+                                    udp_conns.insert(peer_id, sender);
+                                }
+                            }
+                            event_pub.send(Event::PeerConnected { peer_id }).await
+                                .expect("[Peers] Error sending event");
+                        }
+                        Event::PeerConnected { peer_id } => {
+
                             if let Some(peer) = peers.get_mut(&peer_id) {
                                 peer.set_state(PeerState::Connected);
                             } else {
@@ -222,22 +253,11 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         },
                         Event::PeerDisconnected { peer_id, reconnect } => {
                             if let Some(peer) = peers.get_mut(&peer_id) {
+
                                 peer.set_state(PeerState::NotConnected);
 
-                                if let Some(duration) = reconnect {
-                                    let mut event_pub = event_pub.clone();
-
-                                    // wait for some time, then try to reconnect
-                                    spawn(async move {
-                                        task::sleep(Duration::from_millis(duration)).await;
-                                        debug!("[Peers] Raising reconnect event");
-
-                                        event_pub.send(Event::TryConnect {
-                                            peer_id,
-                                            after: duration,
-                                        }).await;
-
-                                    });
+                                if let Some(after) = reconnect {
+                                    raise_event_after_delay(Event::TryConnect { peer_id }, after, &event_pub);
                                 }
                             } else {
                                 error!("[Peers] Peer list is out-of-sync.")
@@ -253,39 +273,39 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         Event::BytesSent { .. } => (),
                         Event::BytesBroadcasted { .. } => (),
                         Event::BytesReceived { .. } => (),
-                        Event::TryConnect { peer_id, after } => {
+                        Event::TryConnect { peer_id } => {
                             // ^^^ You read wrong...it's *Try*, not Bit!!! Now feel ashamed of yourself!
-
-                            if after > 0 {
-                                // FIXME: this actually causes kind-of-an-issue, because shutting down still
-                                // works, but has to wait for the completion of this future, which is annoying
-                                task::sleep(Duration::from_millis(after)).await;
-                            }
-
                             if let Some(mut peer) = peers.get_mut(&peer_id) {
+                                if peer.is_connected() {
+                                    continue;
+                                }
 
-                                if peer.is_not_connected() {
-
-                                    if let Url::Tcp(peer_addr) = peer.url() {
-
+                                match peer.url() {
+                                    Url::Tcp(peer_addr) => {
                                         if let Some(conn) = tcp::try_connect(&peer.id(), peer_addr).await {
 
-                                            tcp_conns.insert(peer.id(), *peer_addr);
+                                            if tcp_conns.contains_key(&peer_id) {
+                                                drop(conn);
+                                                continue;
+                                            }
 
-                                            spawn(tcp::conn_actor(conn, event_pub.clone()));
+                                            let (sender, receiver) = conns::channel();
 
-                                            event_pub.send(Event::PeerConnectedOverTcp {
-                                                peer_id: peer.id(),
-                                            }.into()).await;
+                                            tcp_conns.insert(peer.id(), sender);
+
+                                            spawn(tcp::conn_actor(conn, receiver, event_pub.clone()));
+
+                                            event_pub.send(Event::PeerConnected { peer_id: peer.id() }).await;
 
                                         } else {
                                             debug!("[Peers] Connection attempt failed. Retrying in {} ms", RECONNECT_COOLDOWN);
 
-                                            event_pub.send(Event::TryConnect {
-                                                peer_id,
-                                                after: RECONNECT_COOLDOWN,
-                                            }).await;
+                                            raise_event_after_delay(Event::TryConnect { peer_id }, RECONNECT_COOLDOWN, &event_pub);
+
                                         }
+                                    },
+                                    Url::Udp(peer_addr) => {
+                                        // TODO
                                     }
                                 }
                             }
@@ -297,6 +317,17 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
     }
 
     debug!("[Peers] Stopping actor");
+}
+
+fn raise_event_after_delay(event: Event, after: u64, event_pub: &EventPub) {
+    let mut event_pub = event_pub.clone();
+
+    // finished once it has waited and send the event
+    spawn(async move {
+        task::sleep(Duration::from_millis(after)).await;
+
+        event_pub.send(event).await;
+    });
 }
 
 #[cfg(test)]
