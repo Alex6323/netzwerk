@@ -85,38 +85,40 @@ pub fn init(config: Config) -> NetControl {
 
     let mut command_dp = CommandDispatcher::new();
 
-    // Actor command channels
-    let p_commands = command_dp.register("peers");
-    //let c_commands = command_dp.register("conns");
-    //let t_commands = command_dp.register("tcp");
-    //let u_commands = command_dp.register("udp");
+    // Peers actor
+    let p_commands_recv = command_dp.register("peers");
+    let (p_events_send, p_events_recv) = events::channel();
 
-    // Actor Event channels
-    let (pub_p, sub_p) = events::channel();
-    //let (pub_c, sub_c) = events::channel();
-    //let (pub_t, sub_t) = events::channel();
+    // TCP actor
+    let t_commands_recv = command_dp.register("tcp");
+    let (t_events_send, t_events_recv) = events::channel();
+
+    //let u_commands = command_dp.register("udp");
     //let (pub_u, sub_u) = events::channel();
+
+    //let c_commands = command_dp.register("conns");
+    //let (pub_c, sub_c) = events::channel();
 
     //let (dummy_pub, dummy_sub) = events::channel();
 
     let (net_control_send, net_control_recv) = commands::channel();
 
     // Start actors
-    let m_handle = spawn(commands::actor(command_dp, net_control_recv));
-    let p_handle = spawn(peers::actor(p_commands, sub_p, pub_p));
-    //let c_handle = spawn(conns::actor(c_commands, sub_t, pub_c)); // only TCP for now
-    //let t_handle = spawn(tcp::actor(binding_addr, t_commands, pub_t));
-    //let u_handle = spawn(udp::actor(binding_addr, u_commands, pub_u));
+    let m_actor = spawn(commands::actor(command_dp, net_control_recv));
+    let p_actor = spawn(peers::actor(p_commands_recv, p_events_recv, p_events_send));
+    let t_actor = spawn(tcp::actor(binding_addr, t_commands_recv, t_events_send));
+    //let c_actor = spawn(conns::actor(c_commands, sub_t, pub_c)); // only TCP for now
+    //let u_actor = spawn(udp::actor(binding_addr, u_commands, pub_u));
 
     wait(500, "[Net  ] Spawning actors");
 
     let mut net_control = NetControl::new(net_control_send);
 
-    net_control.add_task(m_handle);
-    net_control.add_task(p_handle);
-    //net_control.add_task(c_handle);
-    //net_control.add_task(t_handle);
-    //net_control.add_task(u_handle);
+    net_control.add_task(m_actor);
+    net_control.add_task(p_actor);
+    net_control.add_task(t_actor);
+    //net_control.add_task(u_actor);
+    //net_control.add_task(c_actor);
 
     net_control
 }

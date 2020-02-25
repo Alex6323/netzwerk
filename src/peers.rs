@@ -153,7 +153,7 @@ impl Default for PeerState {
     }
 }
 
-const RECONNECT_COOLDOWN: u64 = 1000;
+const RECONNECT_COOLDOWN: u64 = 10000;
 
 /// Starts the peers actor.
 pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut peers_tx: EventPub) {
@@ -172,26 +172,28 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut peers
                     Command::AddPeer { mut peer } => {
                         peers.add(peer.clone());
 
-                        peers_tx.send(Event::PeerAdded { peer: peer.clone(), num_peers: peers.num() }.into());
+                        peers_tx.send(Event::PeerAdded {
+                            peer: peer.clone(),
+                            num_peers: peers.num() }.into()).await;
 
                         if peer.is_not_connected() {
                             if let Some(stream) = connect_to_peer(&mut peer).await {
                                 peers_tx.send(Event::PeerConnectedViaTCP {
                                     peer_id: peer.id(),
                                     tcp_conn: TcpConnection::new(stream),
-                                }.into());
+                                }.into()).await;
                             } else {
                                 peers_tx.send(Event::PeerDisconnected {
                                     peer_id: peer.id(),
                                     reconnect: Some(RECONNECT_COOLDOWN)
-                                });
+                                }).await;
                             }
                         }
                     },
                     Command::RemovePeer { peer_id } => {
                         peers.remove(&peer_id);
 
-                        peers_tx.send(Event::PeerRemoved { peer_id }.into());
+                        peers_tx.send(Event::PeerRemoved { peer_id }.into()).await;
                     },
                     Command::Shutdown => {
                         drop(peers);
@@ -219,10 +221,10 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut peers
                                 // wait for some time, then try to reconnect
                                 task::spawn(async move {
                                     task::sleep(Duration::from_millis(duration)).await;
-                                    info!("raising reconnect event");
+                                    info!("[Peers] Raising reconnect event");
                                     peers_tx.send(Event::TryReconnect {
                                         peer_id,
-                                    });
+                                    }).await;
 
                                 });
                             }
@@ -234,12 +236,12 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut peers
                                         peers_tx.send(Event::PeerConnectedViaTCP {
                                             peer_id: peer.id(),
                                             tcp_conn: TcpConnection::new(stream),
-                                        }.into());
+                                        }.into()).await;
                                     } else {
                                         peers_tx.send(Event::PeerDisconnected {
                                             peer_id: peer.id(),
                                             reconnect: Some(RECONNECT_COOLDOWN)
-                                        });
+                                        }).await;
                                     }
                                 }
                             }

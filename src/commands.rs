@@ -145,7 +145,7 @@ pub enum Actor<'a> {
     Many(Vec<&'a str>),
 }
 
-/// Starts the `commands` actor. It's purpose is to receive `Command`s from the user
+/// Starts the `commands` actor. Its purpose is to receive `Command`s from the user
 /// and dispatch them using internal knowledge about which actor needs to respond to
 /// which command. If this is not done this way, then either all commands would need
 /// to be broadcasted to all actors, which is an overhead we cannot accept, or we
@@ -157,7 +157,7 @@ pub async fn actor(mut command_dp: CommandDispatcher, mut command_rx: CommandRec
     debug!("[Cmnds] Starting actor");
 
     while let Some(command) = command_rx.next().await {
-        //debug!("[Cmnds] Received {:?}", command);
+        debug!("[Cmnds] Received {:?}", command);
         match command {
             AddPeer { peer } => {
                 command_dp.send(AddPeer { peer }).to(One("peers")).await;
