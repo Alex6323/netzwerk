@@ -1,17 +1,11 @@
-use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::errors;
-use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
+use crate::events::Event;
 use crate::peers::PeerId;
-use crate::tcp::TcpConnection;
 
 use async_trait::async_trait;
-use futures::prelude::*;
-use futures::{select, FutureExt};
 
 use std::collections::HashMap;
 use std::result;
-
-use log::*;
 
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
 
@@ -84,8 +78,7 @@ impl<C: RawConnection> Connections<C> {
     }
 }
 
-use super::*;
-
+/*
 pub async fn actor(mut command_rx: CommandRx, mut conn_rx: EventSub, mut conns_tx: EventPub) {
     debug!("[Conns] Starting actor");
 
@@ -172,3 +165,4 @@ pub async fn actor(mut command_rx: CommandRx, mut conn_rx: EventSub, mut conns_t
 
     debug!("[Conns] Stopping actor");
 }
+*/

@@ -82,29 +82,33 @@ impl RawConnection for UdpConnection {
     }
 }
 
-pub mod actor {
-    use super::*;
+/// Starts the UDP socket actor.
+pub async fn actor(binding_addr: SocketAddr, event_prod: EventPub) {
+    debug!("[UDP  ] Starting UDP socket actor");
 
-    /// Runs the UDP socket actor.
-    ///
-    /// The actor will listen for incoming UDP packets, and dispatch them to the
-    /// appropriate UDP connection.
-    pub async fn run(binding_addr: SocketAddr, event_prod: EventPub) {
-        debug!("[UDP  ] Starting UDP socket actor");
+    let socket = UdpSocket::bind(binding_addr).await.expect("error binding UDP socket");
+    debug!("[UDP  ] Bound to {}",
+        socket.local_addr().expect("error reading local address from UDP socket"));
 
-        let socket = UdpSocket::bind(binding_addr).await.expect("error binding UDP socket");
-        debug!("[UDP  ] Bound to {}",
-            socket.local_addr().expect("error reading local address from UDP socket"));
+    loop {
+        let mut buf = vec![0; 1024];
+        let (num_bytes, peer_addr) = socket.recv_from(&mut buf).await
+            .expect("error receiving from UDP socket");
 
-        loop {
-            let mut buf = vec![0; 1024];
-            let (num_bytes, peer_addr) = socket.recv_from(&mut buf).await
-                .expect("error receiving from UDP socket");
+        info!("Received {} bytes from {}", num_bytes, peer_addr);
 
-            info!("Received {} bytes from {}", num_bytes, peer_addr);
+    }
 
-        }
+    debug!("[UDP  ] Stopping UDP socket actor");
+}
 
-        debug!("[UDP  ] Stopping UDP socket actor");
+pub async fn connect(peer: &mut Peer) -> Option<()> {
+    if let Url::Udp(peer_addr) = peer.url() {
+        info!("[UDP  ] Trying to connect to peer: {:?} via UDP", peer.id());
+
+        // TODO
+        // A connection is considered established if we are receiving messages from that peer.
+    } else {
+        None
     }
 }

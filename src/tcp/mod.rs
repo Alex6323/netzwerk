@@ -7,7 +7,7 @@ use crate::peers::PeerId;
 use async_std::net::{SocketAddr, TcpListener, TcpStream};
 use async_std::prelude::*;
 use async_std::sync::Arc;
-use async_std::task;
+use async_std::task::spawn;
 use async_trait::async_trait;
 use futures::sink::SinkExt;
 use futures::{select, FutureExt};
@@ -27,13 +27,14 @@ impl TcpConnection {
     /// Returns peer address associated with this connection.
     pub fn peer_addr(&self) -> SocketAddr {
         (*self.0).peer_addr()
-            .expect("error reading peer address from TCP stream")
+            .expect("[TCP  ] Error reading peer address from TCP stream")
     }
 }
 
 impl Drop for TcpConnection {
     fn drop(&mut self) {
-        self.0.shutdown(std::net::Shutdown::Both).expect("error shutting TCP stream down");
+        self.0.shutdown(std::net::Shutdown::Both)
+            .expect("[TCP  ] Error shutting TCP stream down");
     }
 }
 
@@ -61,7 +62,7 @@ impl RawConnection for TcpConnection {
 
         Ok(Event::BytesSent {
             num_bytes: bytes.len(),
-            receiver_addr: Address::new(self.peer_addr())
+            to: Address::new(self.peer_addr())
         }.into())
     }
 
@@ -74,7 +75,7 @@ impl RawConnection for TcpConnection {
 
         Ok(Event::BytesReceived {
             num_bytes,
-            sender_addr: Address::new(self.peer_addr()),
+            from: Address::new(self.peer_addr()),
             bytes
         }.into())
     }
@@ -97,17 +98,21 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
             // Handle connection requests
             stream = incoming.next().fuse() => {
                 if let Some(stream) = stream {
-                    let stream = stream.expect("error unwrapping TCP stream");
+                    let stream = stream
+                        .expect("[TCP  ] Error unwrapping incoming stream");
+
                     debug!("[TCP  ] Successfully connected peer");
 
-                    let peer_id = PeerId(stream.peer_addr().expect("error creating peer id"));
-                    let tcp_conn = TcpConnection::new(stream);
+                    let peer_id = PeerId(stream.peer_addr()
+                        .expect("[TCP  ] Error creating peer id from stream"));
 
-                    // TODO: create a new actor for each connection which uses `mpsc` channel
+                    let conn = TcpConnection::new(stream);
+
+                    spawn(conn_actor(conn, event_pub.clone()));
+
                     event_pub.send(
-                        Event::PeerConnectedViaTCP {
+                        Event::PeerConnectedOverTcp {
                             peer_id,
-                            tcp_conn,
                         }.into()).await.expect("error sending event");
                 }
             },
@@ -127,4 +132,34 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
     }
 
     debug!("[TCP  ] Stopping actor");
+}
+
+pub async fn try_connect(peer_id: &PeerId, peer_addr: &SocketAddr) -> Option<TcpConnection> {
+    info!("[TCP  ] Trying to connect to peer: {:?} over TCP", peer_id);
+
+    match TcpStream::connect(peer_addr).await {
+        Ok(stream) => {
+            info!("[TCP  ] Connection successful");
+
+            let peer_id = PeerId(stream.peer_addr()
+                .expect("[TCP  ] Error reading peer address from stream"));
+
+            Some(TcpConnection::new(stream))
+        },
+        Err(e) => {
+            warn!("[TCP  ] Connection attempt failed (Peer offline?)");
+            warn!("[TCP  ] Error was: {:?}", e);
+            None
+        }
+    }
+}
+
+pub async fn conn_actor(mut conn: TcpConnection, mut event_pub: EventPub) {
+    debug!("[TCP  ] Starting connection actor");
+    //
+    while let Ok(bytes) = conn.recv().await {
+        //
+    }
+
+    debug!("[TCP  ] Stopping connection actor");
 }

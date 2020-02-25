@@ -1,6 +1,5 @@
 use crate::address::Address;
-use crate::peers::{Peer, PeerId};
-use crate::tcp::TcpConnection;
+use crate::peers::PeerId;
 
 use std::fmt;
 use std::time::Duration;
@@ -15,7 +14,7 @@ pub enum Event {
 
     /// Raised when a peer was added. The layer will try to connect to/reconnect with that peer.
     PeerAdded {
-        peer: Peer,
+        peer_id: PeerId,
         num_peers: usize,
     },
 
@@ -25,19 +24,15 @@ pub enum Event {
     },
 
     /// Raised when a peer is connected or reconnected via TCP.
-    PeerConnectedViaTCP {
+    PeerConnectedOverTcp {
         peer_id: PeerId,
-        tcp_conn: TcpConnection,
     },
 
-    /*
     /// Raised when a peer is connected or reconnected via UDP.
-    PeerConnectedViaUDP {
+    PeerConnectedOverUdp {
         peer_id: PeerId,
         address: Address,
-        udp_conn: UdpConnection,
     },
-    */
 
     /// Raised when a peer was disconnected.
     PeerDisconnected {
@@ -54,7 +49,7 @@ pub enum Event {
     /// Raised when bytes have been sent to a peer.
     BytesSent {
         num_bytes: usize,
-        receiver_addr: Address,
+        to: Address,
     },
 
     /// Raised when bytes have been sent to all peers.
@@ -65,29 +60,49 @@ pub enum Event {
     /// Raised when bytes have been received.
     BytesReceived {
         num_bytes: usize,
-        sender_addr: Address,
+        from: Address,
         bytes: Vec<u8>,
     },
 
-    /// Raised when the system should to try to reconnect with a peer.
-    TryReconnect {
+    /// Raised when the system should to try to connect or reconnect to a peer after a certain delay.
+    TryConnect {
         peer_id: PeerId,
+        after: u64,
     }
 }
 
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Event::PeerAdded { peer, num_peers } => write!(f, "Peer added: id = {:?}, num = {}", peer.id(), num_peers),
-            Event::PeerRemoved { peer_id } => write!(f, "Peer removed: {:?}", peer_id),
-            Event::PeerConnectedViaTCP { peer_id, .. } => write!(f, "Peer connected via TCP: {:?}", peer_id),
-            //Event::PeerConnectedViaUDP { peer_id, .. } => write!(f, "Peer connected via UDP: {:?}", peer_id),
-            Event::PeerDisconnected { peer_id, reconnect } => write!(f, "Peer disconnected: {:?}, reconnect: {}", peer_id, reconnect.is_some()),
-            Event::PeerStalled { peer_id, .. } => write!(f, "Peer stalled: {:?}", peer_id),
-            Event::BytesSent { num_bytes, receiver_addr } => write!(f, "Message sent to: {:?} ({} bytes)", receiver_addr, num_bytes),
-            Event::BytesReceived { num_bytes, sender_addr, .. } => write!(f, "Message received from: {:?} ({} bytes)", sender_addr, num_bytes),
-            Event::TryReconnect { peer_id } => write!(f, "TryReconnect: {:?}", peer_id),
-            _ => Ok(()),
+            Event::PeerAdded { peer_id, num_peers } =>
+                write!(f, "Event::PeerAdded {{ peer_id = {:?}, num_peers = {} }}", peer_id, num_peers),
+
+            Event::PeerRemoved { peer_id } =>
+                write!(f, "Event::PeerRemoved  {{ peer_id = {:?} }}", peer_id),
+
+            Event::PeerConnectedOverTcp { peer_id } =>
+                write!(f, "Event::PeerConnectedOverTcp: {{ peer_id = {:?} }}", peer_id),
+
+            Event::PeerConnectedOverUdp { peer_id, address } =>
+                write!(f, "Event::PeerConnectedOverUdp {{  peer_id = {:?}, address = {:?}", peer_id, address),
+
+            Event::PeerDisconnected { peer_id, reconnect } =>
+                write!(f, "Event::PeerDisconnected: {{ peer_id = {:?}, reconnect = {:?} }}", peer_id, reconnect),
+
+            Event::PeerStalled { peer_id, since } =>
+                write!(f, "Event::PeerStalled {{ peer_id = {:?}, since = {:?} ms }}", peer_id, since),
+
+            Event::BytesSent { num_bytes, to } =>
+                write!(f, "Event::BytesSent: {{ num_bytes = {:?}, to = {:?} }})", num_bytes, to),
+
+            Event::BytesBroadcasted { num_bytes } =>
+                write!(f, "Event::BytesBroadcasted {{ num_bytes = {:?} }}", num_bytes),
+
+            Event::BytesReceived { num_bytes, from, .. } =>
+                write!(f, "Event::BytesReceived {{ num_bytes = {:?}, from = {:?} }}", num_bytes, from),
+
+            Event::TryConnect { peer_id, after } =>
+                write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),
         }
     }
 }

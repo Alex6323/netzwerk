@@ -109,9 +109,11 @@ impl Node {
     }
 
     fn block_on_ctrl_c(&self) {
-        let mut rt = tokio::runtime::Runtime::new().expect("error");
+        let mut rt = tokio::runtime::Runtime::new()
+            .expect("[Node ] Error creating Tokio runtime");
 
-        rt.block_on(tokio::signal::ctrl_c()).expect("error");
+        rt.block_on(tokio::signal::ctrl_c())
+            .expect("[Node ] Error blocking on CTRL-C");
     }
 
 
@@ -150,17 +152,12 @@ impl NodeBuilder {
         self
     }
 
-    /*
-    pub fn with_handles(mut self, handles: Handles) -> Self {
-        self.handles.replace(handles);
-        self
-    }
-    */
-
     pub fn build(self) -> Node {
         Node {
-            config: self.config.expect("NodeBuilder: no config"),
-            net_control: self.net_control.expect("NodeBuilder: no net-control"),
+            config: self.config
+                .expect("[Node ] No config given to node builder"),
+            net_control: self.net_control
+                .expect("[Node ] no net-control instance given to node builder"),
         }
     }
 }

@@ -1,4 +1,4 @@
-#![recursion_limit="512"]
+#![recursion_limit="1024"]
 
 pub use address::{Address, Protocol, Url};
 pub use conns::Connections;
@@ -20,7 +20,6 @@ mod commands;
 mod events;
 mod peers;
 
-use async_std::future::Future;
 use async_std::task::{self, spawn, JoinHandle};
 use futures::prelude::*;
 use log::*;

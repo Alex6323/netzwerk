@@ -2,7 +2,6 @@ use crate::peers::{Peer, PeerId};
 
 use std::fmt;
 
-use async_std::task;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::prelude::*;
@@ -29,7 +28,7 @@ pub enum Command {
 
     /// Sends bytes to a connected peer.
     SendBytes {
-        receiver: PeerId,
+        to: PeerId,
         bytes: Vec<u8>,
     },
 
@@ -37,6 +36,9 @@ pub enum Command {
     BroadcastBytes {
         bytes: Vec<u8>,
     },
+
+    /// Shuts down the system.
+    Shutdown,
 
     /*
     /// Applies a modifier to the specified peer.
@@ -46,18 +48,36 @@ pub enum Command {
     },
     */
 
-    /// Shuts down the system.
-    Shutdown,
+    /*
+    // TODO
+    RequestPeerInfo {
+        f: Fn(&Peer) -> Response,
+        response: futures::channel::oneshot::Sender<Response>,
+    }
+    */
+}
+
+struct Response {
+    //TODO
 }
 
 impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Command::AddPeer { peer } => write!(f, "AddPeer command <<{:?}>>", peer.id()),
-            Command::RemovePeer { peer_id } => write!(f, "RemovePeer command <<{:?}>>", peer_id),
-            Command::SendBytes { receiver, .. } => write!(f, "SendBytes command <<{:?}>>", receiver),
-            Command::BroadcastBytes { .. } => write!(f, "BroadcastBytes command"),
-            Command::Shutdown => write!(f, "Shutdown command"),
+            Command::AddPeer { peer } =>
+                write!(f, "Command::AddPeer {{ peer_id = {:?} }} ", peer.id()),
+
+            Command::RemovePeer { peer_id } =>
+                write!(f, "Command::RemovePeer {{ peer_id = {:?} }}", peer_id),
+
+            Command::SendBytes { receiver, .. } =>
+                write!(f, "Command::SendBytes {{ receiver = {:?} }}", receiver),
+
+            Command::BroadcastBytes { .. } =>
+                write!(f, "Command::BroadcastBytes"),
+
+            Command::Shutdown =>
+                write!(f, "Command::Shutdown"),
         }
     }
 }
@@ -95,7 +115,9 @@ impl CommandDispatcher {
     }
 }
 
+// TEMP
 type CommandSendResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
 /// Makes using the `CommandDispatcher` more convenient.
 /// Examples:
 /// ```
@@ -179,9 +201,10 @@ pub async fn actor(mut command_dp: CommandDispatcher, mut command_rx: CommandRec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_std::task;
 
     fn create_command_dispatcher() {
-        let command_dp = CommandDispatcher::new();
+        let mut command_dp = CommandDispatcher::new();
 
         let actor_a_rx = command_dp.register("actor_a");
         let actor_b_rx = command_dp.register("actor_b");
