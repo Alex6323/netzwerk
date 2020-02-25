@@ -40,19 +40,19 @@ fn main() {
 
     logger::init(log::LevelFilter::Debug);
 
-    let (net_control, net_events) = netzwerk::init(config.clone());
+    let net_control = netzwerk::init(config.clone());
 
     let mut node = Node::builder()
         .with_config(config)
         .with_net_control(net_control)
         .build();
 
-    spawn(notification_handler(net_events));
+    //spawn(notification_handler(net_events));
 
     let msg = Utf8Message::new(&args.msg);
 
     block_on(node.init());
-    block_on(node.spam(msg, 5, 1000));
+    //block_on(node.spam(msg, 5, 1000));
     block_on(node.shutdown());
 }
 

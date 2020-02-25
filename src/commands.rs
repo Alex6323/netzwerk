@@ -6,6 +6,7 @@ use async_std::task;
 use futures::channel::mpsc;
 use futures::sink::SinkExt;
 use futures::prelude::*;
+use log::*;
 
 use std::collections::HashMap;
 
@@ -86,23 +87,6 @@ impl CommandDispatcher {
         receiver
     }
 
-    /*
-    pub async fn broadcast(&mut self, command: Command) -> CommandResult {
-        // TODO: those commands can be dispatched concurrently
-        for (_, sender) in &mut self.senders {
-            sender.send(command.clone()).await.expect("error sending command");
-        }
-    }
-
-    pub async fn send_to_one(&mut self, command: Command, addr: &str) -> CommandResult {
-        if !self.senders.contains_key(addr) {
-            return;
-        }
-        let mut sender = self.senders.get_mut(addr).unwrap();
-        sender.send(command).await.expect("error sending command");
-    }
-    */
-
     pub fn send<'a>(&'a mut self, command: Command) -> CommandSend<'a> {
         CommandSend {
             senders: &mut self.senders,
@@ -112,49 +96,53 @@ impl CommandDispatcher {
 }
 
 type CommandSendResult = std::result::Result<(), Box<dyn std::error::Error>>;
-
-// use Actor::*;
-// command_dp.send(Command::Shutdown).to(All);
-// command_dp.send(Command::AddPeer { peer }).to(One("peers"));
-// command_dp.send(Command::RemovePeer { peer_id }).to(Many("peers", "conns"));
-
+/// Makes using the `CommandDispatcher` more convenient.
+/// Examples:
+/// ```
+/// use Command::*;
+/// use Actor::*;
+/// command_dp.send(Shutdown).to(All);
+/// command_dp.send(AddPeer { peer }).to(One("peers"));
+/// command_dp.send(RemovePeer { peer_id }).to(Many("peers", "conns"));
+/// ```
 pub struct CommandSend<'a> {
     senders: &'a mut HashMap<String, CommandSender>,
     command: Command,
 }
 
 impl<'a> CommandSend<'a> {
-    pub async fn to(self, actor: Actor) {
+    pub async fn to(self, actor: Actor<'a>) {
         match actor {
-            Actor::All => {
-                // TODO: those commands can be dispatched concurrently
-                for (_, sender) in self.senders {
-                    sender.send(self.command.clone()).await.expect("error sending command");
-                }
-            },
             Actor::One(id) => {
                 if !self.senders.contains_key(&id[..]) {
                     return;
                 }
                 let sender = self.senders.get_mut(&id[..]).unwrap();
-                sender.send(self.command).await.expect("error sending command");
+                sender.send(self.command).await.expect("[Cmnds] Error sending command to one actor");
             }
             Actor::Many(ids) => {
+                // TODO: those commands can be dispatched concurrently
                 for id in ids {
                     if self.senders.contains_key(&id[..]) {
                         let sender = self.senders.get_mut(&id[..]).unwrap();
-                        sender.send(self.command.clone()).await.expect("error sending command");
+                        sender.send(self.command.clone()).await.expect("[Cmnds] Error sending command to many actors");
                     }
                 }
             }
+            Actor::All => {
+                // TODO: those commands can be dispatched concurrently
+                for (_, sender) in self.senders {
+                    sender.send(self.command.clone()).await.expect("[Cmnds] Error sending command to all actors");
+                }
+            },
         }
     }
 }
 
-pub enum Actor {
+pub enum Actor<'a> {
     All,
-    One(String),
-    Many(Vec<String>),
+    One(&'a str),
+    Many(Vec<&'a str>),
 }
 
 /// Starts the `commands` actor. It's purpose is to receive `Command`s from the user
@@ -163,18 +151,29 @@ pub enum Actor {
 /// to be broadcasted to all actors, which is an overhead we cannot accept, or we
 /// would need to leak internal details as the user would need to know which actors
 /// exist in the system.
-pub async fn actor(mut command_rx: CommandReceiver) {
+pub async fn actor(mut command_dp: CommandDispatcher, mut command_rx: CommandReceiver) {
+    use Actor::*;
+    use Command::*;
+    debug!("[Cmnds] Starting actor");
+
     while let Some(command) = command_rx.next().await {
+        //debug!("[Cmnds] Received {:?}", command);
         match command {
-            Command::AddPeer { peer } => {
-                // forward this to `peers`.
+            AddPeer { peer } => {
+                command_dp.send(AddPeer { peer }).to(One("peers")).await;
             },
-            Command::RemovePeer { peer_id } => {
-                // forward this to `peers`.
+            RemovePeer { peer_id } => {
+                command_dp.send(RemovePeer { peer_id }).to(Many(vec!["peers", "conns"])).await;
             },
+            Shutdown => {
+                command_dp.send(Shutdown).to(All).await;
+                break;
+            }
             _ => {}
         }
     }
+
+    debug!("[Cmnds] Stopping actor");
 }
 
 #[cfg(test)]

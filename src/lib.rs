@@ -32,15 +32,13 @@ use crate::commands::{CommandDispatcher, CommandSender};
 pub type Result<T> = std::result::Result<T, errors::Error>;
 
 pub struct NetControl {
-    command_dp: CommandDispatcher,
     command_tx: CommandSender,
     tasks: Vec<JoinHandle<()>>,
 }
 
 impl NetControl {
-    pub fn new(command_dp: CommandDispatcher, command_tx: CommandSender) -> Self {
+    pub fn new(command_tx: CommandSender) -> Self {
         Self {
-            command_dp,
             command_tx,
             tasks: vec![],
         }
@@ -61,14 +59,15 @@ impl NetControl {
     }
 
     pub async fn send(&mut self, command: Command) {
-        self.command_tx.send(command).await;
+        self.command_tx.send(command).await
+            .expect("netcontrol: error sending command");
     }
 
 }
 
 /// Initializes the networking layer.
-pub fn init(config: Config) -> (NetControl, EventSubscriber) {
-    debug!("[Net  ] Initializing network layer");
+pub fn init(config: Config) -> NetControl {
+    info!("[Net  ] Initializing network layer");
 
     let static_peers = config.peers();
     if static_peers.num() == 0 {
@@ -88,41 +87,41 @@ pub fn init(config: Config) -> (NetControl, EventSubscriber) {
 
     // Actor command channels
     let p_commands = command_dp.register("peers");
-    let c_commands = command_dp.register("conns");
-    let t_commands = command_dp.register("tcp");
+    //let c_commands = command_dp.register("conns");
+    //let t_commands = command_dp.register("tcp");
     //let u_commands = command_dp.register("udp");
 
     // Actor Event channels
     let (pub_p, sub_p) = events::channel();
-    let (pub_c, sub_c) = events::channel();
-    let (pub_t, sub_t) = events::channel();
+    //let (pub_c, sub_c) = events::channel();
+    //let (pub_t, sub_t) = events::channel();
     //let (pub_u, sub_u) = events::channel();
 
-    let (dummy_pub, dummy_sub) = events::channel();
+    //let (dummy_pub, dummy_sub) = events::channel();
 
     let (net_control_send, net_control_recv) = commands::channel();
 
     // Start actors
-    let m_handle = spawn(commands::actor(net_control_recv));
-    let p_handle = spawn(peers::actor(p_commands, dummy_sub, pub_p));
-    let c_handle = spawn(conns::actor(c_commands, sub_t, pub_c)); // only TCP for now
-    let t_handle = spawn(tcp::actor(binding_addr, t_commands, pub_t));
+    let m_handle = spawn(commands::actor(command_dp, net_control_recv));
+    let p_handle = spawn(peers::actor(p_commands, sub_p, pub_p));
+    //let c_handle = spawn(conns::actor(c_commands, sub_t, pub_c)); // only TCP for now
+    //let t_handle = spawn(tcp::actor(binding_addr, t_commands, pub_t));
     //let u_handle = spawn(udp::actor(binding_addr, u_commands, pub_u));
 
     wait(500, "[Net  ] Spawning actors");
 
-    let mut net_control = NetControl::new(command_dp, net_control_send);
+    let mut net_control = NetControl::new(net_control_send);
 
     net_control.add_task(m_handle);
     net_control.add_task(p_handle);
-    net_control.add_task(c_handle);
-    net_control.add_task(t_handle);
+    //net_control.add_task(c_handle);
+    //net_control.add_task(t_handle);
     //net_control.add_task(u_handle);
 
-    (net_control, sub_p)
+    net_control
 }
 
 fn wait(millis: u64, explanation: &str) {
-    info!("{}", explanation);
+    debug!("{}", explanation);
     task::block_on(task::sleep(Duration::from_millis(millis)));
 }
