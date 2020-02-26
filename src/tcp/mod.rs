@@ -116,13 +116,13 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
                             protocol: Protocol::Tcp,
                             sender,
                         }).await
-                        .expect("[TCP  ] Error sending event");
+                        .expect("[TCP  ] Error sending PeerAccepted event");
                 }
             },
             // Handle API commands
             command = command_rx.next().fuse() => {
                 if let Some(command) = command {
-                    debug!("[TCP  ] Received: {:?}", command);
+                    debug!("[TCP  ] Received {:?}", command);
                     match command {
                         Command::Shutdown => {
                             break;

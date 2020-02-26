@@ -7,11 +7,8 @@ use netzwerk::{
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "example node", about = "an example node")]
+#[structopt(name = "example node", about = "Proof-of-Concept for the 'netzwerk' crate")]
 pub struct Args {
-    #[structopt(long)]
-    pub id: String,
-
     #[structopt(long)]
     pub bind: String,
 
@@ -30,7 +27,6 @@ impl Args {
         }
 
         Config {
-            id: self.id.clone(),
             binding_addr: Address::new(self.bind.clone()),
             peers,
         }

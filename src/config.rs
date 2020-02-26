@@ -1,15 +1,11 @@
-//use super::args::Args;
-
 use crate::address::{Address, Url};
 use crate::peers::{Peer, Peers};
 use crate::utils;
 
 use async_std::net::ToSocketAddrs;
-//use structopt::StructOpt;
 
 #[derive(Clone)]
 pub struct Config {
-    pub id: String,
     pub binding_addr: Address,
     pub peers: Vec<Url>,
 }
@@ -30,7 +26,6 @@ impl Config {
 }
 
 pub struct ConfigBuilder {
-    id: Option<String>,
     binding_addr: Option<Address>,
     peers: Vec<Url>,
 }
@@ -38,15 +33,9 @@ pub struct ConfigBuilder {
 impl ConfigBuilder {
     pub fn new() -> Self {
         Self {
-            id: None,
             binding_addr: None,
             peers: vec![],
         }
-    }
-
-    pub fn with_identifier(mut self, id: &str) -> Self {
-        self.id.replace(id.into());
-        self
     }
 
     pub fn with_binding(mut self, binding_addr: impl ToSocketAddrs) -> Self {
@@ -63,7 +52,6 @@ impl ConfigBuilder {
 
     pub fn build(self) -> Config {
         Config {
-            id: self.id.unwrap_or(Address::new("localhost:1337").port().unwrap().to_string()),
             binding_addr: self.binding_addr.unwrap_or(Address::new("localhost:1337")),
             peers: self.peers,
         }

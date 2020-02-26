@@ -2,11 +2,9 @@
 //! You might want to run several instances of such a node in separate
 //! terminals and connect those instances by specifying commandline arguments.
 //!
-//! To set up a node id'ed with "A" listening at `localhost:1337` and with
-//! two TCP peers located at localhost 1338, localhost 1339 pass this to `cargo`:
-//!
 //! ```bash
-//! cargo r --example node -- --id A --bind localhost:1337 --peers tcp://localhost:1338 tcp://localhost:1339 --msg hello
+//! cargo r --example node -- --bind localhost:1337 --peers tcp://localhost:1338 --msg ping
+//! cargo r --example node -- --bind localhost:1338 --peers tcp://localhost:1337 --msg pong
 //! ```
 
 use netzwerk::{
@@ -82,10 +80,6 @@ impl Node {
         }
 
         info!("[Node ] Initialized");
-    }
-
-    pub fn id(&self) -> &String {
-        &self.config.id
     }
 
     pub async fn add_peer(&mut self, peer: Peer) {
