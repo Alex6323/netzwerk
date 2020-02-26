@@ -158,7 +158,7 @@ impl Default for PeerState {
 const RECONNECT_COOLDOWN: u64 = 5000;
 
 /// Starts the peers actor.
-pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event_pub: EventPub) {
+pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event_sub2: EventSub, mut event_pub: EventPub) {
     debug!("[Peers] Starting actor");
 
     let mut peers = Peers::new();
@@ -217,12 +217,12 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                 }
             },
 
-            // === handle events ===
-            event = event_sub.next().fuse() => {
-                if let Some(event) = event {
-                    debug!("[Peers] Received {:?}", event);
+            // === handle peer events ===
+            peer_event = event_sub.next().fuse() => {
+                if let Some(peer_event) = peer_event {
+                    debug!("[Peers] Received {:?}", peer_event);
 
-                    match event {
+                    match peer_event {
                         Event::PeerAdded { .. } => (),
                         Event::PeerRemoved { .. } => (),
                         Event::PeerAccepted { peer_id, protocol, sender } => {
@@ -311,6 +311,28 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                                 }
                             }
                         }
+                    }
+                }
+            }
+            // === handle tcp events ===
+            tcp_event = event_sub2.next().fuse() => {
+                if let Some(tcp_event) = tcp_event {
+                    debug!("[Peers] Received {:?}", tcp_event);
+
+                    match tcp_event {
+                        Event::PeerAccepted { peer_id, protocol, sender } => {
+                            match protocol {
+                                Protocol::Tcp => {
+                                    tcp_conns.insert(peer_id, sender);
+                                },
+                                _ =>  {
+                                    udp_conns.insert(peer_id, sender);
+                                }
+                            }
+                            event_pub.send(Event::PeerConnected { peer_id }).await
+                                .expect("[Peers] Error sending 'PeerConnected' event");
+                        }
+                        _ => (),
                     }
                 }
             }

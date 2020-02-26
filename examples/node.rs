@@ -9,11 +9,9 @@
 
 use netzwerk::{
     Config,
-    Connections,
     Command::*,
     Event,
     EventSubscriber as EventSub,
-    log::*,
     Network,
     Peer, PeerId,
     Protocol,
@@ -28,6 +26,7 @@ use futures::stream::Stream;
 use futures::*;
 use futures::prelude::*;
 use futures::future::Future;
+use log::*;
 use structopt::StructOpt;
 use stream_cancel::StreamExt;
 
@@ -39,7 +38,7 @@ fn main() {
 
     logger::init(log::LevelFilter::Debug);
 
-    let (network, shutdown) = netzwerk::init(config.clone());
+    let (network, shutdown, receiver) = netzwerk::init(config.clone());
 
     let mut node = Node::builder()
         .with_config(config)
@@ -58,9 +57,15 @@ fn main() {
     block_on(node.shutdown());
 }
 
-async fn notification_handler(mut peer_events: EventSub) {
-    while let Some(event) = peer_events.next().await {
-        logger::info("", &format!("[Node ] Received event {:?}", event));
+async fn notification_handler(mut bytes_received_events: EventSub) {
+    while let Some(bytes_received_event) = bytes_received_events.next().await {
+        logger::info("", &format!("[Node ] Received event {:?}", bytes_received_event));
+        match bytes_received_event {
+            Event::BytesReceived { num_bytes, from, bytes } => {
+                // TODO
+            }
+            _ => (),
+        }
     }
 }
 

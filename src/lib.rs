@@ -72,7 +72,7 @@ impl Shutdown {
 }
 
 /// Initializes the networking layer.
-pub fn init(config: Config) -> (Network, Shutdown) {
+pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     info!("[Net  ] Initializing network layer");
 
     let static_peers = config.peers();
@@ -91,42 +91,54 @@ pub fn init(config: Config) -> (Network, Shutdown) {
 
     let mut command_dp = CommandDispatcher::new();
 
-    // Peers actor
-    let p_commands_recv = command_dp.register("peers");
-    let (p_events_send, p_events_recv) = events::channel();
+    // Register Peers actor (pa = peer actor)
+    let command_pa_recv = command_dp.register("peers");
+    let (event_pa_send, event_pa_recv) = events::channel();
 
-    // TCP actor
-    let t_commands_recv = command_dp.register("tcp");
-    let (t_events_send, t_events_recv) = events::channel();
+    // Register TCP actor (ta = tcp actor)
+    let command_ta_recv = command_dp.register("tcp");
+    let (event_ta_send, event_ta_recv) = events::channel();
 
-    //let u_commands = command_dp.register("udp");
-    //let (pub_u, sub_u) = events::channel();
+    // Register UDP actor (ta = tcp actor)
+    //let command_ua_recv = command_dp.register("udp");
+    //let (event_ua_send, event_ua_recv) = events::channel();
 
-    //let c_commands = command_dp.register("conns");
-    //let (pub_c, sub_c) = events::channel();
+    // Make a channel from the "outside" to the command dispatcher
+    let (command_net_send, command_net_recv) = commands::channel();
 
-    //let (dummy_pub, dummy_sub) = events::channel();
+    // This actor dispatches/multiplexes incoming commands from the user.
+    // It knows which other actor needs to listen to which command, and
+    // therefore helps reducing redundant message passing.
+    let ca = spawn(commands::actor(command_dp, command_net_recv));
 
-    let (net_control_send, net_control_recv) = commands::channel();
+    // This actor is the most crucial of the pack. It manages the peers
+    // list, and keeps track of the various connections.
+    let pa = spawn(peers::actor(command_pa_recv, event_pa_recv, event_ta_recv, event_pa_send));
 
-    // Start actors
-    let m_actor = spawn(commands::actor(command_dp, net_control_recv));
-    let p_actor = spawn(peers::actor(p_commands_recv, p_events_recv, p_events_send));
-    let t_actor = spawn(tcp::actor(binding_addr, t_commands_recv, t_events_send));
-    //let u_actor = spawn(udp::actor(binding_addr, u_commands, pub_u));
+    // This actor is responsible for listening on a TCP socket, and send
+    // incoming streams to the peers actor.
+    let ta = spawn(tcp::actor(binding_addr, command_ta_recv, event_ta_send));
+
+    // This actor is responsible for listening on a UDP socket, and send
+    // incoming packets to the peers actor.
+    //let ua = spawn(udp::actor(binding_addr, commands_ua_recv, event_ua_send));
 
     wait(500, "[Net  ] Spawning actors");
 
-    let network = Network::new(net_control_send);
+    let network = Network::new(command_net_send);
 
     let mut shutdown = Shutdown::new();
 
-    shutdown.add_task(m_actor);
-    shutdown.add_task(p_actor);
-    shutdown.add_task(t_actor);
-    //shutdown.add_task(u_actor);
+    shutdown.add_task(ca);
+    shutdown.add_task(pa);
+    shutdown.add_task(ta);
+    //shutdown.add_task(ua);
 
-    (network, shutdown)
+    // FIXME: we really need all(?) events demultiplexed into one outgoing channel, or just the
+    // Event::BytesReceived event, as this is what the user cares about.
+    let (dummy_send, dummy_recv) = events::channel();
+
+    (network, shutdown, dummy_recv)
 }
 
 fn wait(millis: u64, explanation: &str) {

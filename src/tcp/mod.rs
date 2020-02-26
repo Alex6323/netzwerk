@@ -99,7 +99,7 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
                     let stream = stream
                         .expect("[TCP  ] Error unwrapping incoming stream");
 
-                    debug!("[TCP  ] Successfully connected peer");
+                    debug!("[TCP  ] Connection established (Incoming)");
 
                     let peer_id = PeerId(stream.peer_addr()
                         .expect("[TCP  ] Error creating peer id from stream"));
@@ -142,7 +142,7 @@ pub async fn try_connect(peer_id: &PeerId, peer_addr: &SocketAddr) -> Option<Tcp
 
     match TcpStream::connect(peer_addr).await {
         Ok(stream) => {
-            info!("[TCP  ] Connection successful");
+            info!("[TCP  ] Connection established (Outgoing)");
 
             let peer_id = PeerId(stream.peer_addr()
                 .expect("[TCP  ] Error reading peer address from stream"));
@@ -165,14 +165,17 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
 
         select! {
             bytes_in = conn.recv().fuse() => {
-                event_pub.send(bytes_in.expect("[TCP  ] Error receiving bytes"));
+                if let Ok(bytes_in) = bytes_in {
+                    event_pub.send(bytes_in).await.expect("[TCP  ] Error receiving bytes")
+                }
             },
 
             bytes_out = bytes_rx.next().fuse() => {
                 if let Some(bytes_out) = bytes_out {
                     let event = conn.send(bytes_out).await.expect("[TCP  ] Error sending bytes");
 
-                    event_pub.send(event);
+                    event_pub.send(event).await
+                        .expect("[TCP  ] Error published event");
                 }
             }
         }
