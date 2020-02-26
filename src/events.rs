@@ -89,7 +89,7 @@ impl fmt::Debug for Event {
                 write!(f, "Event::Accepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
 
             Event::PeerConnected { peer_id } =>
-                write!(f, "Event::PeerConnectedOverTcp: {{ peer_id = {:?} }}", peer_id),
+                write!(f, "Event::PeerConnected: {{ peer_id = {:?} }}", peer_id),
 
             /*
             Event::PeerConnectedOverUdp { peer_id, address } =>

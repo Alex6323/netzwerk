@@ -295,7 +295,8 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                                             spawn(tcp::conn_actor(conn, receiver, event_pub.clone()));
 
-                                            event_pub.send(Event::PeerConnected { peer_id: peer.id() }).await;
+                                            event_pub.send(Event::PeerConnected { peer_id: peer.id() }).await
+                                                .expect("[Peers] Error sending 'PeerConnected' event");
 
                                         } else {
                                             debug!("[Peers] Connection attempt failed. Retrying in {} ms", RECONNECT_COOLDOWN);
@@ -326,7 +327,8 @@ fn raise_event_after_delay(event: Event, after: u64, event_pub: &EventPub) {
     spawn(async move {
         task::sleep(Duration::from_millis(after)).await;
 
-        event_pub.send(event).await;
+        event_pub.send(event).await
+            .expect("[Peers] Error sending event after delay");
     });
 }
 

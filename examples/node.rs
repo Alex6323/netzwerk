@@ -16,9 +16,10 @@ use netzwerk::{
     Event,
     EventSubscriber as EventSub,
     log::*,
-    NetControl,
+    Network,
     Peer, PeerId,
     Protocol,
+    Shutdown,
     tcp::*,
 };
 
@@ -40,11 +41,12 @@ fn main() {
 
     logger::init(log::LevelFilter::Debug);
 
-    let net_control = netzwerk::init(config.clone());
+    let (network, shutdown) = netzwerk::init(config.clone());
 
     let mut node = Node::builder()
         .with_config(config)
-        .with_net_control(net_control)
+        .with_network(network.clone())
+        .with_shutdown(shutdown)
         .build();
 
     //spawn(notification_handler(net_events));
@@ -53,7 +55,7 @@ fn main() {
 
     block_on(node.init());
 
-    //task::spawn(node.spam(msg, 50, 15000));
+    std::thread::spawn(|| spam(network, msg, 50, 1000));
 
     block_on(node.shutdown());
 }
@@ -66,7 +68,8 @@ async fn notification_handler(mut peer_events: EventSub) {
 
 struct Node {
     config: Config,
-    net_control: NetControl,
+    network: Network,
+    shutdown: Shutdown,
 }
 
 impl Node {
@@ -86,19 +89,19 @@ impl Node {
     }
 
     pub async fn add_peer(&mut self, peer: Peer) {
-        self.net_control.send(AddPeer { peer }).await;
+        self.network.send(AddPeer { peer }).await;
     }
 
     pub async fn remove_peer(&mut self, peer_id: PeerId) {
-        self.net_control.send(RemovePeer { peer_id }).await;
+        self.network.send(RemovePeer { peer_id }).await;
     }
 
     pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {
-        self.net_control.send(SendBytes { to: peer_id, bytes: message.as_bytes() }).await;
+        self.network.send(SendBytes { to: peer_id, bytes: message.as_bytes() }).await;
     }
 
     pub async fn broadcast_msg(&mut self, message: Utf8Message) {
-        self.net_control.send(BroadcastBytes { bytes: message.as_bytes() }).await;
+        self.network.send(BroadcastBytes { bytes: message.as_bytes() }).await;
     }
 
     pub async fn shutdown(mut self) {
@@ -106,8 +109,8 @@ impl Node {
 
         info!("[Node ] Shutting down...");
 
-        self.net_control.send(Shutdown).await;
-        self.net_control.finish_tasks().await;
+        self.network.send(Shutdown).await;
+        self.shutdown.finish_tasks().await;
     }
 
     fn block_on_ctrl_c(&self) {
@@ -123,24 +126,29 @@ impl Node {
         NodeBuilder::new()
     }
 
-    pub async fn spam(&mut self, msg: Utf8Message, num: usize, interval: u64) {
+}
+
+fn spam(mut network: Network, msg: Utf8Message, num: usize, interval: u64) {
+    task::block_on(async move {
         for _ in 0..num {
             task::sleep(std::time::Duration::from_millis(interval)).await;
-            self.broadcast_msg(msg.clone()).await;
+            network.send(BroadcastBytes { bytes: msg.as_bytes() }).await;
         }
-    }
+    });
 }
 
 struct NodeBuilder {
     config: Option<Config>,
-    net_control: Option<NetControl>,
+    network: Option<Network>,
+    shutdown: Option<Shutdown>,
 }
 
 impl NodeBuilder {
     pub fn new() -> Self {
         Self {
             config: None,
-            net_control: None,
+            network: None,
+            shutdown: None,
         }
     }
 
@@ -149,17 +157,26 @@ impl NodeBuilder {
         self
     }
 
-    pub fn with_net_control(mut self, net_control: NetControl) -> Self {
-        self.net_control.replace(net_control);
+    pub fn with_network(mut self, network: Network) -> Self {
+        self.network.replace(network);
+        self
+    }
+
+    pub fn with_shutdown(mut self, shutdown: Shutdown) -> Self {
+        self.shutdown.replace(shutdown);
         self
     }
 
     pub fn build(self) -> Node {
         Node {
             config: self.config
-                .expect("[Node ] No config given to node builder"),
-            net_control: self.net_control
-                .expect("[Node ] no net-control instance given to node builder"),
+                .expect("[Node ] No config provided"),
+
+            network: self.network
+                .expect("[Node ] No network instance provided"),
+
+            shutdown: self.shutdown
+                .expect("[Node ] No shutdown instance provided"),
         }
     }
 }

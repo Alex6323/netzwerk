@@ -24,26 +24,39 @@ use async_std::task::{self, spawn, JoinHandle};
 use futures::prelude::*;
 use log::*;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::commands::{CommandDispatcher, CommandSender};
 
 pub type Result<T> = std::result::Result<T, errors::Error>;
 
-pub struct NetControl {
-    command_tx: CommandSender,
+#[derive(Clone)]
+pub struct Network(CommandSender);
+
+impl Network {
+    pub(crate) fn new(command_tx: CommandSender) -> Self {
+        Self(command_tx)
+    }
+
+    pub async fn send(&mut self, command: Command) {
+        self.0.send(command).await
+            .expect("network: error sending command");
+    }
+}
+
+pub struct Shutdown {
     tasks: Vec<JoinHandle<()>>,
 }
 
-impl NetControl {
-    pub fn new(command_tx: CommandSender) -> Self {
+impl Shutdown {
+    pub(crate) fn new() -> Self {
         Self {
-            command_tx,
             tasks: vec![],
         }
     }
 
-    pub fn add_task(&mut self, task: JoinHandle<()>) {
+    pub(crate) fn add_task(&mut self, task: JoinHandle<()>) {
         self.tasks.push(task);
     }
 
@@ -56,16 +69,10 @@ impl NetControl {
             task.await;
         }
     }
-
-    pub async fn send(&mut self, command: Command) {
-        self.command_tx.send(command).await
-            .expect("netcontrol: error sending command");
-    }
-
 }
 
 /// Initializes the networking layer.
-pub fn init(config: Config) -> NetControl {
+pub fn init(config: Config) -> (Network, Shutdown) {
     info!("[Net  ] Initializing network layer");
 
     let static_peers = config.peers();
@@ -106,20 +113,20 @@ pub fn init(config: Config) -> NetControl {
     let m_actor = spawn(commands::actor(command_dp, net_control_recv));
     let p_actor = spawn(peers::actor(p_commands_recv, p_events_recv, p_events_send));
     let t_actor = spawn(tcp::actor(binding_addr, t_commands_recv, t_events_send));
-    //let c_actor = spawn(conns::actor(c_commands, sub_t, pub_c)); // only TCP for now
     //let u_actor = spawn(udp::actor(binding_addr, u_commands, pub_u));
 
     wait(500, "[Net  ] Spawning actors");
 
-    let mut net_control = NetControl::new(net_control_send);
+    let network = Network::new(net_control_send);
 
-    net_control.add_task(m_actor);
-    net_control.add_task(p_actor);
-    net_control.add_task(t_actor);
-    //net_control.add_task(u_actor);
-    //net_control.add_task(c_actor);
+    let mut shutdown = Shutdown::new();
 
-    net_control
+    shutdown.add_task(m_actor);
+    shutdown.add_task(p_actor);
+    shutdown.add_task(t_actor);
+    //shutdown.add_task(u_actor);
+
+    (network, shutdown)
 }
 
 fn wait(millis: u64, explanation: &str) {
