@@ -1,8 +1,17 @@
+// TODOS:
+// * create a command to request the PeerState of a particular peer
+// * for some events use a oneshot channel to return success/failure
+//   of the request
+// * allow to configure 'autoconnect' for 'AddPeer' command
+// * allow to disconnect from a peer, but keep it in the peer list
+// * add 'ConnectPeer' command for peers that were added to the peer list,
+//   but not autoconnected
+
 use crate::peers::{Peer, PeerId};
 
 use std::fmt;
 
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
 use futures::sink::SinkExt;
 use futures::prelude::*;
 use log::*;
@@ -19,12 +28,23 @@ pub enum Command {
     /// Adds a peer to the system.
     AddPeer {
         peer: Peer
+        //autoconnect: bool
     },
 
     /// Removes a peer from the system.
     RemovePeer {
         peer_id: PeerId
     },
+
+    /*
+    ConnectPeer {
+        peer_id: PeerId,
+    },
+
+    DisconnectPeer {
+        peer_id: PeerId,
+    },
+    */
 
     /// Sends bytes to a connected peer.
     SendBytes {
@@ -51,10 +71,6 @@ pub enum Command {
         response: futures::channel::oneshot::Sender<Response>,
     }
     */
-}
-
-struct Response {
-    //TODO
 }
 
 impl fmt::Debug for Command {

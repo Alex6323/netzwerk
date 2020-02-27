@@ -39,25 +39,44 @@ pub enum Error {
 #[derive(Debug, Error)]
 pub enum SendError {
 
-    #[error(display = "IO Error")]
-    IoError(#[source] std::io::Error),
+    #[error(display = "Async IO Error")]
+    AsyncIo(#[source] async_std::io::Error),
+
+    #[error(display = "Standard IO Error")]
+    StdIo(#[error(source, no_from)] std::io::Error),
 
     #[error(display = "Error occurred during sending bytes")]
-    SendBytesError,
+    SendBytes,
 
     #[error(display = "Tried sending to unknown peer")]
-    UnknownPeerError,
+    UnknownPeer,
+
+    #[error(display = "Tried to send")]
+    UnhealthyConnection,
 }
 
 #[derive(Debug, Error)]
 pub enum RecvError {
 
+    #[error(display = "Async IO Error")]
+    AsyncIo(#[source] async_std::io::Error),
+
     #[error(display = "IO Error")]
-    IoError(#[source] std::io::Error),
+    StdIo(#[error(source, no_from)] std::io::Error),
 
     #[error(display = "Error occurred during receiving bytes")]
-    RecvBytesError,
+    RecvBytes,
 
     #[error(display = "Tried sending to unknown peer")]
-    UnknownPeerError,
+    UnknownPeer,
+}
+
+#[derive(Debug, Error)]
+pub enum ConnectionError {
+
+    #[error(display = "Connection IO Error")]
+    AsyncIoError(#[source] async_std::io::Error),
+
+    //#[error(display = "Connection IO Error")]
+    //StdIoError(#[source] std::io::Error),
 }

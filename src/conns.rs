@@ -1,4 +1,4 @@
-use crate::errors;
+use crate::errors::{SendError, RecvError};
 use crate::events::Event;
 use crate::peers::PeerId;
 
@@ -10,8 +10,8 @@ use std::result;
 
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
 
-pub type SendResult<T> = result::Result<T, errors::SendError>;
-pub type RecvResult<T> = result::Result<T, errors::RecvError>;
+pub type SendResult<T> = result::Result<T, SendError>;
+pub type RecvResult<T> = result::Result<T, RecvError>;
 
 // NOTE: using this attribute implies heap allocation.
 #[async_trait]
@@ -59,21 +59,21 @@ impl<C: RawConnection> Connections<C> {
     }
 
     pub async fn send(&mut self, bytes: Vec<u8>, to_peer: &PeerId) -> SendResult<Event> {
-        if !self.0.contains_key(to_peer) {
-            return Err(errors::SendError::UnknownPeerError);
-        }
-
-        let peer_conn = self.0.get_mut(to_peer).unwrap();
+        let peer_conn = if !self.0.contains_key(to_peer) {
+            return Err(SendError::UnknownPeer);
+        } else {
+            self.0.get_mut(to_peer).unwrap()
+        };
 
         Ok(peer_conn.send(bytes).await?)
     }
 
     pub async fn recv(&mut self, from_peer: &PeerId) -> RecvResult<Event> {
-        if !self.0.contains_key(from_peer) {
-            return Err(errors::RecvError::UnknownPeerError);
-        }
-
-        let peer_conn = self.0.get_mut(from_peer).unwrap();
+        let peer_conn = if !self.0.contains_key(from_peer) {
+            return Err(RecvError::UnknownPeer);
+        } else {
+            self.0.get_mut(from_peer).unwrap()
+        };
 
         Ok(peer_conn.recv().await?)
     }
