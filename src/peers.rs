@@ -170,7 +170,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
             // === handle commands ===
             command = command_rx.next().fuse() => {
                 let command = command.expect("[Peers] Error receiving command");
-                debug!("[Peers] Received {:?}", command);
+                debug!("[Peers] {:?}", command);
 
                 match command {
                     Command::AddPeer { mut peer } => {
@@ -224,7 +224,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             info!("[Peers] Broadcasted {:?} bytes to {:?} UDP peers",
                                 bytes.len(), udp_conns.len());
                         } else {
-                            warn!("[Peers] No connections available.");
+                            warn!("[Peers] No connections available for broadcast.");
                         }
                     },
                     Command::Shutdown => {
@@ -239,7 +239,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
             // === handle peer events ===
             peer_event = event_sub.next().fuse() => {
                 if let Some(peer_event) = peer_event {
-                    debug!("[Peers] Received {:?}", peer_event);
+                    debug!("[Peers] {:?}", peer_event);
 
                     match peer_event {
                         Event::PeerAdded { .. } => (),
@@ -336,7 +336,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
             // === handle tcp events ===
             tcp_event = event_sub2.next().fuse() => {
                 if let Some(tcp_event) = tcp_event {
-                    debug!("[Peers] Received {:?}", tcp_event);
+                    debug!("[Peers] {:?}", tcp_event);
 
                     match tcp_event {
                         Event::PeerAccepted { peer_id, protocol, sender } => {

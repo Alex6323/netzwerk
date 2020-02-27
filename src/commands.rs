@@ -157,6 +157,10 @@ impl<'a> CommandSend<'a> {
     }
 }
 
+pub(crate) const TCP: &'static str = "tcp";
+pub(crate) const UDP: &'static str = "udp";
+pub(crate) const PEERS: &'static str = "peers";
+
 pub enum Actor<'a> {
     One(&'a str),
     Many(Vec<&'a str>),
@@ -175,7 +179,7 @@ pub async fn actor(mut command_dp: CommandDispatcher, mut command_rx: CommandRec
     debug!("[Cmnds] Starting actor");
 
     while let Some(command) = command_rx.next().await {
-        debug!("[Cmnds] Received {:?}", command);
+        debug!("[Cmnds] {:?}", command);
 
         let actors = match command {
             AddPeer { .. } => {

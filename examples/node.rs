@@ -14,21 +14,15 @@ use netzwerk::{
     EventSubscriber as EventSub,
     Network,
     Peer, PeerId,
-    Protocol,
     Shutdown,
-    tcp::*,
 };
 
 use common::*;
 
-use async_std::task::{self, spawn, block_on};
-use futures::stream::Stream;
-use futures::*;
+use async_std::task::{self, block_on};
 use futures::prelude::*;
-use futures::future::Future;
 use log::*;
 use structopt::StructOpt;
-use stream_cancel::StreamExt;
 
 mod common;
 
@@ -36,7 +30,7 @@ fn main() {
     let args = Args::from_args();
     let config = args.make_config();
 
-    logger::init(log::LevelFilter::Debug);
+    logger::init(log::LevelFilter::Info);
 
     let (network, shutdown, receiver) = netzwerk::init(config.clone());
 
@@ -46,7 +40,7 @@ fn main() {
         .with_shutdown(shutdown)
         .build();
 
-    //spawn(notification_handler(net_events));
+    //task::spawn(notification_handler(receiver));
 
     let msg = Utf8Message::new(&args.msg);
 
@@ -110,6 +104,8 @@ impl Node {
 
         self.network.send(Shutdown).await;
         self.shutdown.finish_tasks().await;
+
+        info!("[Node ] Complete. See you soon!");
     }
 
     fn block_on_ctrl_c(&self) {

@@ -73,7 +73,7 @@ impl Shutdown {
 
 /// Initializes the networking layer.
 pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
-    info!("[Net  ] Initializing network layer");
+    info!("[Net  ] Initializing...");
 
     let static_peers = config.peers();
     if static_peers.num() == 0 {
@@ -92,15 +92,15 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     let mut command_dp = CommandDispatcher::new();
 
     // Register Peers actor (pa = peer actor)
-    let command_pa_recv = command_dp.register("peers");
+    let command_pa_recv = command_dp.register(crate::commands::PEERS);
     let (event_pa_send, event_pa_recv) = events::channel();
 
     // Register TCP actor (ta = tcp actor)
-    let command_ta_recv = command_dp.register("tcp");
+    let command_ta_recv = command_dp.register(crate::commands::TCP);
     let (event_ta_send, event_ta_recv) = events::channel();
 
     // Register UDP actor (ta = tcp actor)
-    //let command_ua_recv = command_dp.register("udp");
+    //let command_ua_recv = command_dp.register(crate::udp::UDP);
     //let (event_ua_send, event_ua_recv) = events::channel();
 
     // Make a channel from the "outside" to the command dispatcher
@@ -137,6 +137,8 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     // FIXME: we really need all(?) events demultiplexed into one outgoing channel, or just the
     // Event::BytesReceived event, as this is what the user cares about.
     let (dummy_send, dummy_recv) = events::channel();
+
+    info!("[Net  ] Initialized");
 
     (network, shutdown, dummy_recv)
 }
