@@ -5,7 +5,7 @@ use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
 
-use async_std::net::SocketAddr;
+use async_std::net::{IpAddr, SocketAddr};
 use async_std::task::{self, spawn};
 use async_std::prelude::*;
 use futures::{select, FutureExt};
@@ -19,13 +19,13 @@ use std::time::Duration;
 pub type PeerResult<T> = result::Result<T, errors::PeerError>;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct PeerId(pub(crate) SocketAddr);
+pub struct PeerId(pub(crate) IpAddr);
 
 impl From<Url> for PeerId {
     fn from(url: Url) -> Self {
         match url {
-            Url::Tcp(socket_addr) => Self(socket_addr),
-            Url::Udp(socket_addr) => Self(socket_addr),
+            Url::Tcp(socket_addr) => Self(socket_addr.ip()),
+            Url::Udp(socket_addr) => Self(socket_addr.ip()),
         }
     }
 }

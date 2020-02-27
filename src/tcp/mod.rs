@@ -49,7 +49,7 @@ impl PartialEq for TcpConnection {
 impl RawConnection for TcpConnection {
 
     fn peer_id(&self) -> PeerId {
-        PeerId(self.peer_addr())
+        PeerId(self.peer_addr().ip())
     }
 
     async fn send(&mut self, bytes: Vec<u8>) -> SendResult<Event> {
@@ -102,7 +102,8 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
                     debug!("[TCP  ] Connection established (Incoming)");
 
                     let peer_id = PeerId(stream.peer_addr()
-                        .expect("[TCP  ] Error creating peer id from stream"));
+                        .expect("[TCP  ] Error creating peer id from stream")
+                        .ip());
 
                     let conn = TcpConnection::new(stream);
 
@@ -145,7 +146,8 @@ pub async fn try_connect(peer_id: &PeerId, peer_addr: &SocketAddr) -> Option<Tcp
             info!("[TCP  ] Connection established (Outgoing)");
 
             let peer_id = PeerId(stream.peer_addr()
-                .expect("[TCP  ] Error reading peer address from stream"));
+                .expect("[TCP  ] Error reading peer address from stream")
+                .ip());
 
             Some(TcpConnection::new(stream))
         },
