@@ -41,16 +41,12 @@ pub enum Command {
     Shutdown,
 
     /*
-    /// Applies a modifier to the specified peer.
-    ModifyPeer {
+    UpdatePeer {
         peer_id: PeerId,
         f: FnMut(&mut Peer),
     },
-    */
 
-    /*
-    // TODO
-    RequestPeerInfo {
+    RequestInfo {
         f: Fn(&Peer) -> Response,
         response: futures::channel::oneshot::Sender<Response>,
     }
@@ -162,9 +158,9 @@ impl<'a> CommandSend<'a> {
 }
 
 pub enum Actor<'a> {
-    All,
     One(&'a str),
     Many(Vec<&'a str>),
+    All,
 }
 
 /// Starts the `commands` actor. Its purpose is to receive `Command`s from the user
@@ -180,19 +176,27 @@ pub async fn actor(mut command_dp: CommandDispatcher, mut command_rx: CommandRec
 
     while let Some(command) = command_rx.next().await {
         debug!("[Cmnds] Received {:?}", command);
-        match command {
-            AddPeer { peer } => {
-                command_dp.send(AddPeer { peer }).to(One("peers")).await;
+
+        let actors = match command {
+            AddPeer { .. } => {
+                One("peers")
             },
-            RemovePeer { peer_id } => {
-                command_dp.send(RemovePeer { peer_id }).to(Many(vec!["peers", "conns"])).await;
+            RemovePeer { .. } => {
+                One("peers")
             },
+            SendBytes { .. } => {
+                One("peers")
+            },
+            BroadcastBytes { .. } => {
+                One("peers")
+            }
             Shutdown => {
                 command_dp.send(Shutdown).to(All).await;
                 break;
             }
-            _ => {}
-        }
+        };
+
+        command_dp.send(command).to(actors).await;
     }
 
     debug!("[Cmnds] Stopping actor");

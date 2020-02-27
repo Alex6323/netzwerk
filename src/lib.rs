@@ -112,7 +112,7 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     let ca = spawn(commands::actor(command_dp, command_net_recv));
 
     // This actor is the most crucial of the pack. It manages the peers
-    // list, and keeps track of the various connections.
+    // list, and keeps track of all the network connections.
     let pa = spawn(peers::actor(command_pa_recv, event_pa_recv, event_ta_recv, event_pa_send));
 
     // This actor is responsible for listening on a TCP socket, and send

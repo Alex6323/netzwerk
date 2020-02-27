@@ -111,9 +111,6 @@ impl fmt::Debug for Event {
             Event::BytesReceived { num_bytes, from, .. } =>
                 write!(f, "Event::BytesReceived {{ num_bytes = {:?}, from = {:?} }}", num_bytes, from),
 
-            //Event::TryConnect { peer_id, after } =>
-                //write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),
-
             Event::TryConnect { peer_id } =>
                 write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),
         }

@@ -193,25 +193,44 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         event_pub.send(Event::PeerRemoved { peer_id }.into()).await;
                     },
                     Command::SendBytes { to, bytes } => {
+                        let nb = bytes.len();
+
                         if let Some(sender) = tcp_conns.get_mut(&to) {
                             sender.send(bytes).await;
+                            info!("[Peers] Send {:?} bytes to {:?} over TCP", nb, to);
+
                         } else if let Some(sender) = udp_conns.get_mut(&to) {
                             sender.send(bytes).await;
+                            info!("[Peers] Send {:?} bytes to {:?} over UDP", nb, to);
+
+                        } else {
+                            warn!("[Peers] No connection with peer {:?}", to);
                         }
                     },
                     Command::BroadcastBytes { bytes } => {
-                        // TODO: send concurrently
-                        for (_, sender) in tcp_conns.iter_mut() {
-                            sender.send(bytes.clone()).await;
-                        }
-                        for (_, sender) in udp_conns.iter_mut() {
-                            sender.send(bytes.clone()).await;
+                        if tcp_conns.len() > 0 {
+                            // TODO: send concurrently
+                            for (_, sender) in tcp_conns.iter_mut() {
+                                sender.send(bytes.clone()).await;
+                            }
+                            info!("[Peers] Broadcasted {:?} bytes to {:?} TCP peers",
+                                bytes.len(), tcp_conns.len());
+                        } else
+
+                        if udp_conns.len() > 0 {
+                            for (_, sender) in udp_conns.iter_mut() {
+                                sender.send(bytes.clone()).await;
+                            }
+                            info!("[Peers] Broadcasted {:?} bytes to {:?} UDP peers",
+                                bytes.len(), udp_conns.len());
+                        } else {
+                            warn!("[Peers] No connections available.");
                         }
                     },
                     Command::Shutdown => {
-                        drop(peers);
                         drop(tcp_conns);
                         drop(udp_conns);
+                        drop(peers);
                         break
                     }
                 }
