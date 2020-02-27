@@ -123,7 +123,7 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
             // Handle API commands
             command = command_rx.next().fuse() => {
                 if let Some(command) = command {
-                    debug!("[TCP  ] Received {:?}", command);
+                    debug!("[TCP  ] {:?}", command);
                     match command {
                         Command::Shutdown => {
                             break;
