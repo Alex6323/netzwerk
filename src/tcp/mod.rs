@@ -1,5 +1,5 @@
 use crate::address::{Address, Protocol};
-use crate::conns::{ByteReceiver, MAX_BUFFER_SIZE, RecvResult, RawConnection, self, SendResult};
+use crate::conns::{ByteReceiver, MAX_BUFFER_SIZE, RawConnection, RECONNECT_COOLDOWN, RecvResult, self, SendResult};
 use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::errors::{ConnectionError, RecvError, SendError};
 use crate::events::{Event, EventPublisher as EventPub};
@@ -20,6 +20,9 @@ pub(crate) type ConnectionResult<T> = result::Result<T, ConnectionError>;
 /// Represents a TCP connection.
 pub struct TcpConnection {
 
+    /// The peer id this connection is associated with.
+    peer_id: PeerId,
+
     /// The underlying TCP stream instance.
     stream: TcpStream,
 
@@ -36,8 +39,10 @@ impl TcpConnection {
     pub fn new(stream: TcpStream) -> ConnectionResult<Self> {
         let local_addr = stream.local_addr()?;
         let remote_addr = stream.peer_addr()?;
+        let peer_id = PeerId(remote_addr.ip());
 
         Ok(Self {
+            peer_id,
             stream,
             local_addr,
             remote_addr,
@@ -56,7 +61,7 @@ impl TcpConnection {
 
     /// Returns, whether this connection is broken.
     pub fn is_broken(&self) -> bool {
-        // NOTE: is there a better way to detect broken/healthy connections?
+        // NOTE: is there a better way to detect broken connections?
         self.stream.peer_addr().is_err()
     }
 
@@ -85,7 +90,10 @@ impl Drop for TcpConnection {
     fn drop(&mut self) {
         match self.shutdown() {
             Ok(()) => (),
-            Err(e) => warn!("[TCP  ] Error shutting down TCP stream"),
+            Err(e) => {
+                warn!("[TCP  ] Error shutting down TCP stream");
+                warn!("[TCP  ] Error was: {:?}", e);
+            }
         }
     }
 }
@@ -102,7 +110,7 @@ impl PartialEq for TcpConnection {
 impl RawConnection for TcpConnection {
 
     fn peer_id(&self) -> PeerId {
-        PeerId(self.remote_addr().ip())
+        self.peer_id
     }
 
     async fn send(&mut self, bytes: Vec<u8>) -> SendResult<Event> {
@@ -113,7 +121,7 @@ impl RawConnection for TcpConnection {
 
             Ok(Event::BytesSent {
                 num_bytes: bytes.len(),
-                to: Address::new(self.remote_addr()),
+                to: self.peer_id(),
             })
         } else {
             Err(SendError::SendBytes)
@@ -238,13 +246,16 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
 
             bytes_in = conn.recv().fuse() => {
                 if let Ok(bytes_in) = bytes_in {
-                    event_pub.send(bytes_in).await.expect("[TCP  ] Error receiving bytes");
+
+                    event_pub.send(bytes_in).await.
+                        expect("[TCP  ] Error receiving bytes");
+
                 } else {
-                    warn!("[TCP  ] Incoming byte stream stopped (from {:?})", conn.peer_id());
+                    debug!("[TCP  ] Incoming byte stream stopped (from {:?})", conn.peer_id());
 
                     event_pub.send(Event::PeerDisconnected {
                         peer_id: conn.peer_id(),
-                        reconnect: Some(10000),
+                        reconnect: Some(RECONNECT_COOLDOWN),
                     }).await.expect("TCP  ] Error publ. Event::PeerDisconnected");
 
                     break;
@@ -253,19 +264,18 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
 
             bytes_out = bytes_rx.next().fuse() => {
                 if let Some(bytes_out) = bytes_out {
-                    let event = conn.send(bytes_out).await.
-                        expect("[TCP  ] Error sending bytes");
+                    let event = conn.send(bytes_out).await
+                        .expect("[TCP  ] Error sending bytes");
 
                     event_pub.send(event).await
                         .expect("[TCP  ] Error published event");
 
                 } else {
-                    warn!("[TCP  ] bytes_rx.next() Stopping connection actor for {:?}", conn.peer_id());
                     break;
                 }
             }
         }
     }
 
-    debug!("[TCP  ] Stopping connection actor");
+    debug!("[TCP  ] Stopping connection actor for {:?}", conn.peer_id());
 }

@@ -48,8 +48,8 @@ pub enum Command {
 
     /// Sends bytes to a connected peer.
     SendBytes {
-        to: PeerId,
         bytes: Vec<u8>,
+        to: PeerId,
     },
 
     /// Sends bytes to all connected peers.

@@ -1,6 +1,6 @@
 use crate::address::{Url, Protocol};
 use crate::commands::{Command, CommandReceiver as CommandRx};
-use crate::conns::{self, ByteSender};
+use crate::conns::{self, ByteSender, RECONNECT_COOLDOWN};
 use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
@@ -161,8 +161,6 @@ impl Default for PeerState {
     }
 }
 
-const RECONNECT_COOLDOWN: u64 = 5000;
-
 /// Starts the peers actor.
 pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event_sub2: EventSub, mut event_pub: EventPub) {
     debug!("[Peers] Starting actor");
@@ -200,42 +198,48 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         tcp_conns.remove(&peer_id);
                         udp_conns.remove(&peer_id);
 
-                        event_pub.send(Event::PeerRemoved { peer_id }).await;
+                        event_pub.send(Event::PeerRemoved { peer_id, num_peers: peers.num() }).await;
                     },
                     Command::SendBytes { to, bytes } => {
-                        let nb = bytes.len();
+                        let num_bytes = bytes.len();
 
                         if let Some(sender) = tcp_conns.get_mut(&to) {
                             sender.send(bytes).await;
-                            info!("[Peers] Send {:?} bytes to {:?} over TCP", nb, to);
 
                         } else if let Some(sender) = udp_conns.get_mut(&to) {
                             sender.send(bytes).await;
-                            info!("[Peers] Send {:?} bytes to {:?} over UDP", nb, to);
 
                         } else {
                             warn!("[Peers] No connection with peer {:?}", to);
+                            continue;
                         }
+
+                        event_pub.send(Event::BytesSent { num_bytes, to }).await;
                     },
                     Command::BroadcastBytes { bytes } => {
-                        if tcp_conns.len() > 0 {
-                            // TODO: send concurrently
-                            for (_, sender) in tcp_conns.iter_mut() {
-                                sender.send(bytes.clone()).await;
-                            }
-                            info!("[Peers] Broadcasted {:?} bytes to {:?} TCP peers",
-                                bytes.len(), tcp_conns.len());
-                        } else
+                        let mut num_sends = 0;
 
-                        if udp_conns.len() > 0 {
-                            for (_, sender) in udp_conns.iter_mut() {
-                                sender.send(bytes.clone()).await;
-                            }
-                            info!("[Peers] Broadcasted {:?} bytes to {:?} UDP peers",
-                                bytes.len(), udp_conns.len());
-                        } else {
-                            warn!("[Peers] No connections available for broadcast.");
+                        // TODO: send concurrently
+                        for (_, sender) in tcp_conns.iter_mut() {
+                            sender.send(bytes.clone()).await;
+                            num_sends += 1;
                         }
+
+                        // TODO: send concurrently
+                        for (_, sender) in udp_conns.iter_mut() {
+                            sender.send(bytes.clone()).await;
+                            num_sends += 1;
+                        }
+
+                        if num_sends == 0 {
+                            warn!("[Peers] No connections available for broadcast.");
+                            continue;
+                        }
+
+                        event_pub.send(Event::BytesBroadcasted {
+                            num_bytes: bytes.len(),
+                            num_sends,
+                        });
                     },
                     Command::Shutdown => {
                         drop(tcp_conns);
@@ -256,9 +260,14 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     debug!("[Peers] {:?}", peer_event);
 
                 match peer_event {
-                    Event::PeerAdded { .. } => (),
-                    Event::PeerRemoved { .. } => (),
+                    Event::PeerAdded { peer_id, num_peers } => {
+                        info!("[Peers] Peer '{:?}' added ({:?}).", peer_id, num_peers);
+                    },
+                    Event::PeerRemoved { peer_id, num_peers } => {
+                        info!("[Peers] Peer {:?} removed. ({:?}).", peer_id, num_peers);
+                    },
                     Event::PeerAccepted { peer_id, protocol, sender } => {
+                        // NOTE: prevents duplicate connections
                         match protocol {
                             Protocol::Tcp => {
                                 if tcp_conns.contains_key(&peer_id) {
@@ -285,12 +294,8 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         }
                     },
                     Event::PeerDisconnected { peer_id, reconnect } => {
-                        debug!("{:?} num_tcp = {}, num_udp = {}", peer_id, tcp_conns.len(), udp_conns.len());
-
                         tcp_conns.remove(&peer_id);
                         udp_conns.remove(&peer_id);
-
-                        debug!("after removal: num_tcp = {}, num_udp = {}", tcp_conns.len(), udp_conns.len());
 
                         if let Some(peer) = peers.get_mut(&peer_id) {
 
@@ -310,9 +315,15 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             error!("[Peers] Peer list is out-of-sync. This should never happen.");
                         }
                     },
-                    Event::BytesSent { .. } => (),
-                    Event::BytesBroadcasted { .. } => (),
-                    Event::BytesReceived { .. } => (),
+                    Event::BytesSent { num_bytes, to } => {
+                        info!("[Peers] Sent {:?} bytes to {:?}", num_bytes, to);
+                    },
+                    Event::BytesBroadcasted { num_bytes, num_sends } => {
+                        info!("[Peers] Broadcasted {:?} bytes to {:?} peer/s", num_bytes, num_sends);
+                    }
+                    Event::BytesReceived { num_bytes, from, .. } => {
+                        info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
+                    },
                     Event::TryConnect { peer_id } => {
                         // ^^^ You read wrong...it's *Try*, not Bit!!! Now feel ashamed of yourself!
                         if let Some(mut peer) = peers.get_mut(&peer_id) {
@@ -376,12 +387,8 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             .expect("[Peers] Error sending 'PeerConnected' event");
                     }
                     Event::PeerDisconnected { peer_id, reconnect } => {
-                        debug!("{:?} num_tcp = {}, num_udp = {}", peer_id, tcp_conns.len(), udp_conns.len());
-
                         tcp_conns.remove(&peer_id);
                         udp_conns.remove(&peer_id);
-
-                        debug!("after removal: num_tcp = {}, num_udp = {}", tcp_conns.len(), udp_conns.len());
 
                         if let Some(peer) = peers.get_mut(&peer_id) {
 

@@ -22,7 +22,7 @@ pub enum Event {
     /// Raised when a peer was removed. No further attempts will be made to connect to that peer.
     PeerRemoved {
         peer_id: PeerId,
-        //num_peers: usize,
+        num_peers: usize,
     },
 
     /// Raised when a peer was accepted.
@@ -55,12 +55,13 @@ pub enum Event {
     /// Raised when bytes have been sent to a peer.
     BytesSent {
         num_bytes: usize,
-        to: Address,
+        to: PeerId,
     },
 
     /// Raised when bytes have been sent to all peers.
     BytesBroadcasted {
         num_bytes: usize,
+        num_sends: usize,
     },
 
     /// Raised when bytes have been received.
@@ -82,8 +83,8 @@ impl fmt::Debug for Event {
             Event::PeerAdded { peer_id, num_peers } =>
                 write!(f, "Event::PeerAdded {{ peer_id = {:?}, num_peers = {} }}", peer_id, num_peers),
 
-            Event::PeerRemoved { peer_id } =>
-                write!(f, "Event::PeerRemoved  {{ peer_id = {:?} }}", peer_id),
+            Event::PeerRemoved { peer_id, num_peers } =>
+                write!(f, "Event::PeerRemoved  {{ peer_id = {:?}, num_peers = {} }}", peer_id, num_peers),
 
             Event::PeerAccepted { peer_id, protocol, .. } =>
                 write!(f, "Event::Accepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
@@ -105,8 +106,8 @@ impl fmt::Debug for Event {
             Event::BytesSent { num_bytes, to } =>
                 write!(f, "Event::BytesSent: {{ num_bytes = {:?}, to = {:?} }})", num_bytes, to),
 
-            Event::BytesBroadcasted { num_bytes } =>
-                write!(f, "Event::BytesBroadcasted {{ num_bytes = {:?} }}", num_bytes),
+            Event::BytesBroadcasted { num_bytes, num_sends } =>
+                write!(f, "Event::BytesBroadcasted {{ num_bytes = {:?}, num_sends = {:?} }}", num_bytes, num_sends),
 
             Event::BytesReceived { num_bytes, from, .. } =>
                 write!(f, "Event::BytesReceived {{ num_bytes = {:?}, from = {:?} }}", num_bytes, from),

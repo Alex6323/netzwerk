@@ -9,9 +9,12 @@ use std::collections::HashMap;
 use std::result;
 
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
+pub(crate) const RECONNECT_COOLDOWN: u64 = 5000;
 
 pub type SendResult<T> = result::Result<T, SendError>;
 pub type RecvResult<T> = result::Result<T, RecvError>;
+
+const WIRE_CHAN_CAPACITY: usize = 10000;
 
 // NOTE: using this attribute implies heap allocation.
 #[async_trait]
@@ -78,8 +81,6 @@ impl<C: RawConnection> Connections<C> {
         Ok(peer_conn.recv().await?)
     }
 }
-
-const WIRE_CHAN_CAPACITY: usize = 10000;
 
 pub type ByteSender = mpsc::Sender<Vec<u8>>;
 pub type ByteReceiver = mpsc::Receiver<Vec<u8>>;

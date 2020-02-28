@@ -124,12 +124,14 @@ impl Node {
 }
 
 fn spam(mut network: Network, msg: Utf8Message, num: usize, interval: u64) {
+    info!("[Node ] Starting spammer: {:?} messages", num);
     task::block_on(async move {
         for _ in 0..num {
             task::sleep(std::time::Duration::from_millis(interval)).await;
             network.send(BroadcastBytes { bytes: msg.as_bytes() }).await;
         }
     });
+    info!("[Node ] Stopping spammer");
 }
 
 struct NodeBuilder {

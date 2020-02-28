@@ -79,7 +79,7 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     if static_peers.num() == 0 {
         warn!("[Net  ] No static peers from config found.");
     } else {
-        info!("[Net  ] Found {} static peer(s) in config.", static_peers.num())
+        info!("[Net  ] Found {} static peer/s in config.", static_peers.num())
     }
 
     let binding_addr = if let Address::Ip(binding_addr) = config.binding_addr {
