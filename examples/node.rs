@@ -46,7 +46,13 @@ fn main() {
 
     block_on(node.init());
 
+    // NOTE: all the node business logic has to go inside of the following scope!!!
+    {
+
+    // For example: spamming the network
     std::thread::spawn(|| spam(network, msg, 50, 1000));
+
+    }
 
     block_on(node.shutdown());
 }
