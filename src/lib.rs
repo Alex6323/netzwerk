@@ -103,8 +103,11 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     //let command_ua_recv = command_dp.register(crate::udp::UDP);
     //let (event_ua_send, event_ua_recv) = events::channel();
 
-    // Make a channel from the "outside" to the command dispatcher
+    // Make a channel for the "user" to issue commands
     let (command_net_send, command_net_recv) = commands::channel();
+
+    // Make a channel for the "user" to receive events
+    let (message_net_send, message_net_recv) = events::channel();
 
     // This actor dispatches/multiplexes incoming commands from the user.
     // It knows which other actor needs to listen to which command, and
@@ -113,7 +116,7 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
 
     // This actor is the most crucial of the pack. It manages the peers
     // list, and keeps track of all the network connections.
-    let pa = spawn(peers::actor(command_pa_recv, event_pa_recv, event_ta_recv, event_pa_send));
+    let pa = spawn(peers::actor(command_pa_recv, event_pa_recv, event_ta_recv, event_pa_send, message_net_send));
 
     // This actor is responsible for listening on a TCP socket, and send
     // incoming streams to the peers actor.
@@ -134,13 +137,9 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
     shutdown.add_task(ta);
     //shutdown.add_task(ua);
 
-    // FIXME: we really need all(?) events demultiplexed into one outgoing channel, or just the
-    // Event::BytesReceived event, as this is what the user cares about.
-    let (dummy_send, dummy_recv) = events::channel();
-
     info!("[Net  ] Initialized");
 
-    (network, shutdown, dummy_recv)
+    (network, shutdown, message_net_recv)
 }
 
 fn wait(millis: u64, explanation: &str) {

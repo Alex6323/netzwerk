@@ -30,7 +30,7 @@ fn main() {
     let args = Args::from_args();
     let config = args.make_config();
 
-    logger::init(log::LevelFilter::Debug);
+    logger::init(log::LevelFilter::Info);
 
     let (network, shutdown, receiver) = netzwerk::init(config.clone());
 
@@ -40,7 +40,7 @@ fn main() {
         .with_shutdown(shutdown)
         .build();
 
-    //task::spawn(notification_handler(receiver));
+    task::spawn(notification_handler(receiver));
 
     let msg = Utf8Message::new(&args.msg);
 
@@ -56,7 +56,7 @@ async fn notification_handler(mut bytes_received_events: EventSub) {
         logger::info("", &format!("[Node ] Received event {:?}", bytes_received_event));
         match bytes_received_event {
             Event::BytesReceived { num_bytes, from, bytes } => {
-                // TODO
+                info!("[Node ] Received {} from {}.", num_bytes, from);
             }
             _ => (),
         }

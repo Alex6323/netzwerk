@@ -162,7 +162,7 @@ impl Default for PeerState {
 }
 
 /// Starts the peers actor.
-pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event_sub2: EventSub, mut event_pub: EventPub) {
+pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event_sub2: EventSub, mut event_pub: EventPub, mut net_pub: EventPub) {
     debug!("[Peers] Starting actor");
 
     let mut peers = Peers::new();
@@ -170,6 +170,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
     let mut udp_conns: HashMap<PeerId, ByteSender> = HashMap::new();
 
     loop {
+
         select! {
             // === handle commands ===
             command = command_rx.next().fuse() => {
@@ -252,6 +253,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
             // === handle peer events ===
             peer_event = event_sub.next().fuse() => {
+
                 if peer_event.is_none() {
                     debug!("[Peers] Event channel closed");
                     break;
@@ -262,9 +264,15 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                 match peer_event {
                     Event::PeerAdded { peer_id, num_peers } => {
                         info!("[Peers] Peer '{:?}' added ({:?}).", peer_id, num_peers);
+
+                        // Publish this event to the outside world
+                        net_pub.send(Event::PeerAdded { peer_id, num_peers }).await;
                     },
                     Event::PeerRemoved { peer_id, num_peers } => {
                         info!("[Peers] Peer {:?} removed. ({:?}).", peer_id, num_peers);
+
+                        // Publish this event to the outside world
+                        net_pub.send(Event::PeerRemoved { peer_id, num_peers }).await;
                     },
                     Event::PeerAccepted { peer_id, protocol, sender } => {
                         // NOTE: prevents duplicate connections
@@ -321,8 +329,11 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     Event::BytesBroadcasted { num_bytes, num_sends } => {
                         info!("[Peers] Broadcasted {:?} bytes to {:?} peer/s", num_bytes, num_sends);
                     }
-                    Event::BytesReceived { num_bytes, from, .. } => {
+                    Event::BytesReceived { num_bytes, from, bytes } => {
                         info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
+
+                        // Publish this event to the outside world
+                        net_pub.send(Event::BytesReceived { num_bytes, from, bytes }).await;
                     },
                     Event::TryConnect { peer_id } => {
                         // ^^^ You read wrong...it's *Try*, not Bit!!! Now feel ashamed of yourself!
@@ -364,7 +375,8 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     }
                 }
             }
-            // === TEMPORARY: handle tcp events ===
+
+            // === TEMPORARY: JOIN THIS WITH OTHER EVENTS: handle tcp events ===
             tcp_event = event_sub2.next().fuse() => {
                 if tcp_event.is_none() {
                     debug!("[Peers] TCP Event channel closed");
