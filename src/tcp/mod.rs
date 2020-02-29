@@ -88,11 +88,13 @@ impl TcpConnection {
 
 impl Drop for TcpConnection {
     fn drop(&mut self) {
-        match self.shutdown() {
-            Ok(()) => (),
-            Err(e) => {
-                warn!("[TCP  ] Error shutting down TCP stream");
-                warn!("[TCP  ] Error was: {:?}", e);
+        if self.is_not_broken() {
+            match self.shutdown() {
+                Ok(()) => (),
+                Err(e) => {
+                    warn!("[TCP  ] Error shutting down TCP stream");
+                    warn!("[TCP  ] Error was: {:?}", e);
+                }
             }
         }
     }

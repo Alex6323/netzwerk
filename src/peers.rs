@@ -297,6 +297,10 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                         if let Some(peer) = peers.get_mut(&peer_id) {
                             peer.set_state(PeerState::Connected);
+
+                            // Publish this event to the outside world
+                            net_pub.send(Event::PeerConnected { peer_id }).await;
+
                         } else {
                             error!("[Peers] Peer list is out-of-sync. This should never happen.")
                         }
@@ -308,6 +312,9 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         if let Some(peer) = peers.get_mut(&peer_id) {
 
                             peer.set_state(PeerState::NotConnected);
+
+                            // Publish this event to the outside world
+                            net_pub.send(Event::PeerDisconnected { peer_id, reconnect }).await;
 
                             if let Some(after) = reconnect {
                                 raise_event_after_delay(Event::TryConnect { peer_id }, after, &event_pub);
@@ -405,6 +412,9 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         if let Some(peer) = peers.get_mut(&peer_id) {
 
                             peer.set_state(PeerState::NotConnected);
+
+                            // Publish this event to the outside world
+                            net_pub.send(Event::PeerDisconnected { peer_id, reconnect }).await;
 
                             if let Some(after) = reconnect {
                                 raise_event_after_delay(Event::TryConnect { peer_id }, after, &event_pub);
