@@ -4,9 +4,8 @@
 
 * async (based on async-std),
 * event-driven,
-* lock-less (message passing, actor model, no globally shared state),
-* easily extendable by adding commands, events, and more network protocols
-
+* lock-free and free of globally shared state (instead: message passing, actor model),
+* easily extendable by adding commands, events, network protocols
 
 ## Supported protocols
 * TCP
