@@ -30,7 +30,7 @@ fn main() {
     let args = Args::from_args();
     let config = args.make_config();
 
-    logger::init(log::LevelFilter::Debug);
+    logger::init(log::LevelFilter::Info);
 
     let (network, shutdown, receiver) = netzwerk::init(config.clone());
 

@@ -65,7 +65,7 @@ pub enum RecvError {
     StdIo(#[error(source, no_from)] std::io::Error),
 
     #[error(display = "Error occurred during receiving bytes")]
-    RecvBytes,
+    RecvBytes(&'static str),
 
     #[error(display = "Tried sending to unknown peer")]
     UnknownPeer,

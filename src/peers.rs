@@ -1,6 +1,6 @@
 use crate::address::{Url, Protocol};
 use crate::commands::{Command, CommandReceiver as CommandRx};
-use crate::conns::{self, ByteSender, RECONNECT_COOLDOWN};
+use crate::conns::{self, ByteSender, RawConnection, RECONNECT_COOLDOWN};
 use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
@@ -358,14 +358,25 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                                             continue;
                                         }
 
-                                        let (sender, receiver) = conns::channel();
+                                        let peer_id = conn.peer_id();
+                                        let (conn_actor_send, conn_actor_recv) = conns::channel();
 
-                                        tcp_conns.insert(peer.id(), sender);
+                                        //tcp_conns.insert(peer.id(), sender);
 
-                                        spawn(tcp::conn_actor(conn, receiver, event_pub.clone()));
+                                        spawn(tcp::conn_actor(conn, conn_actor_recv, event_pub.clone()));
 
+                                        event_pub.send(
+                                            Event::PeerAccepted {
+                                                peer_id,
+                                                protocol: Protocol::Tcp,
+                                                sender: conn_actor_send,
+                                            }).await
+                                            .expect("[TCP  ] Error sending PeerAccepted event");
+
+                                        /*
                                         event_pub.send(Event::PeerConnected { peer_id: peer.id() }).await
                                             .expect("[Peers] Error sending 'PeerConnected' event");
+                                        */
 
                                     } else {
                                         debug!("[Peers] Connection attempt failed. Retrying in {} ms", RECONNECT_COOLDOWN);
@@ -379,6 +390,20 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                                 }
                             }
                         }
+                    },
+                    Event::PeerAccepted { peer_id, protocol, sender } => {
+                        match protocol {
+                            Protocol::Tcp => {
+                                tcp_conns.insert(peer_id, sender);
+                            },
+                            Protocol::Udp =>  {
+                                udp_conns.insert(peer_id, sender);
+                            },
+                            _ => (),
+                        }
+
+                        event_pub.send(Event::PeerConnected { peer_id }).await
+                            .expect("[Peers] Error sending 'PeerConnected' event");
                     }
                 }
             }
@@ -398,10 +423,12 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             Protocol::Tcp => {
                                 tcp_conns.insert(peer_id, sender);
                             },
-                            _ =>  {
+                            Protocol::Udp =>  {
                                 udp_conns.insert(peer_id, sender);
-                            }
+                            },
+                            _ => (),
                         }
+
                         event_pub.send(Event::PeerConnected { peer_id }).await
                             .expect("[Peers] Error sending 'PeerConnected' event");
                     }

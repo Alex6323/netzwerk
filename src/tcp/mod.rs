@@ -137,14 +137,17 @@ impl RawConnection for TcpConnection {
             let mut bytes = vec![0; MAX_BUFFER_SIZE];
 
             let num_bytes = self.stream.read(&mut bytes).await?;
-
-            Ok(Event::BytesReceived {
-                num_bytes,
-                from: Address::new(self.remote_addr()),
-                bytes
-            })
+            if num_bytes > 0 {
+                Ok(Event::BytesReceived {
+                    num_bytes,
+                    from: Address::new(self.remote_addr()),
+                    bytes
+                })
+            } else {
+                Err(RecvError::RecvBytes("0 bytes"))
+            }
         } else {
-            Err(RecvError::RecvBytes)
+            Err(RecvError::RecvBytes("broken connection"))
         }
     }
 }
@@ -171,9 +174,11 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
 
                     debug!("[TCP  ] Connection established (Incoming)");
 
+                    /*
                     let peer_id = PeerId(stream.peer_addr()
                         .expect("[TCP  ] Error creating peer id from stream")
                         .ip());
+                    */
 
                     let conn = match TcpConnection::new(stream) {
                         Ok(conn) => conn,
@@ -184,15 +189,16 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
                         }
                     };
 
-                    let (sender, receiver) = conns::channel();
+                    let peer_id = conn.peer_id();
+                    let (conn_actor_send, conn_actor_recv) = conns::channel();
 
-                    spawn(conn_actor(conn, receiver, event_pub.clone()));
+                    spawn(conn_actor(conn, conn_actor_recv, event_pub.clone()));
 
                     event_pub.send(
                         Event::PeerAccepted {
                             peer_id,
                             protocol: Protocol::Tcp,
-                            sender,
+                            sender: conn_actor_send,
                         }).await
                         .expect("[TCP  ] Error sending PeerAccepted event");
                 }
@@ -248,7 +254,6 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
 
             bytes_in = conn.recv().fuse() => {
                 if let Ok(bytes_in) = bytes_in {
-
                     event_pub.send(bytes_in).await.
                         expect("[TCP  ] Error receiving bytes");
 
