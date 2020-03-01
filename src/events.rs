@@ -66,6 +66,7 @@ pub enum Event {
 
     /// Raised when bytes have been received.
     BytesReceived {
+        peer_id: PeerId,
         num_bytes: usize,
         from: Address,
         bytes: Vec<u8>,

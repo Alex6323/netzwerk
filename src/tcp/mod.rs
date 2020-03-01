@@ -141,6 +141,7 @@ impl RawConnection for TcpConnection {
             // FIXME: investigate why we receive streams of 0 bytes.
             if num_bytes > 0 {
                 Ok(Event::BytesReceived {
+                    peer_id: self.peer_id(),
                     num_bytes,
                     from: Address::new(self.remote_addr()),
                     bytes

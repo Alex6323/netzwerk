@@ -335,11 +335,11 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     Event::BytesBroadcasted { num_bytes, num_sends } => {
                         info!("[Peers] Broadcasted {:?} bytes to {:?} peer/s", num_bytes, num_sends);
                     }
-                    Event::BytesReceived { num_bytes, from, bytes } => {
+                    Event::BytesReceived { peer_id, num_bytes, from, bytes } => {
                         info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
 
                         // Publish this event to the outside world
-                        net_pub.send(Event::BytesReceived { num_bytes, from, bytes }).await;
+                        net_pub.send(Event::BytesReceived { peer_id, num_bytes, from, bytes }).await;
                     },
                     Event::TryConnect { peer_id } => {
                         // ^^^ You read wrong...it's *Try*, not Bit!!! Now feel ashamed of yourself!
@@ -434,11 +434,11 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             error!("[Peers] Peer list is out-of-sync. This should never happen.")
                         }
                     },
-                    Event::BytesReceived { num_bytes, from, bytes } => {
+                    Event::BytesReceived { peer_id, num_bytes, from, bytes } => {
                         info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
 
                         // Publish this event to the outside world
-                        net_pub.send(Event::BytesReceived { num_bytes, from, bytes }).await;
+                        net_pub.send(Event::BytesReceived { peer_id, num_bytes, from, bytes }).await;
                     },
                     _ => (),
                 }
