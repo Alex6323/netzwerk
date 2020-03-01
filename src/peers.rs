@@ -275,23 +275,22 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         net_pub.send(Event::PeerRemoved { peer_id, num_peers }).await;
                     },
                     Event::PeerAccepted { peer_id, protocol, sender } => {
-                        // NOTE: prevents duplicate connections
                         match protocol {
                             Protocol::Tcp => {
-                                if tcp_conns.contains_key(&peer_id) {
-                                    continue;
+                                if !tcp_conns.contains_key(&peer_id) {
+                                    tcp_conns.insert(peer_id, sender);
                                 }
-                                tcp_conns.insert(peer_id, sender);
                             },
                             Protocol::Udp => {
-                                if udp_conns.contains_key(&peer_id) {
-                                    continue;
+                                if !udp_conns.contains_key(&peer_id) {
+                                    udp_conns.insert(peer_id, sender);
                                 }
-                                udp_conns.insert(peer_id, sender);
-                            }
+                            },
+                            _ => (),
                         }
+
                         event_pub.send(Event::PeerConnected { peer_id }).await
-                            .expect("[Peers] Error sending event");
+                            .expect("[Peers] Error sending 'PeerConnected' event");
                     }
                     Event::PeerConnected { peer_id } => {
 
@@ -373,11 +372,6 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                                             }).await
                                             .expect("[TCP  ] Error sending PeerAccepted event");
 
-                                        /*
-                                        event_pub.send(Event::PeerConnected { peer_id: peer.id() }).await
-                                            .expect("[Peers] Error sending 'PeerConnected' event");
-                                        */
-
                                     } else {
                                         debug!("[Peers] Connection attempt failed. Retrying in {} ms", RECONNECT_COOLDOWN);
 
@@ -391,20 +385,6 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             }
                         }
                     },
-                    Event::PeerAccepted { peer_id, protocol, sender } => {
-                        match protocol {
-                            Protocol::Tcp => {
-                                tcp_conns.insert(peer_id, sender);
-                            },
-                            Protocol::Udp =>  {
-                                udp_conns.insert(peer_id, sender);
-                            },
-                            _ => (),
-                        }
-
-                        event_pub.send(Event::PeerConnected { peer_id }).await
-                            .expect("[Peers] Error sending 'PeerConnected' event");
-                    }
                 }
             }
 
@@ -421,10 +401,14 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     Event::PeerAccepted { peer_id, protocol, sender } => {
                         match protocol {
                             Protocol::Tcp => {
-                                tcp_conns.insert(peer_id, sender);
+                                if !tcp_conns.contains_key(&peer_id) {
+                                    tcp_conns.insert(peer_id, sender);
+                                }
                             },
-                            Protocol::Udp =>  {
-                                udp_conns.insert(peer_id, sender);
+                            Protocol::Udp => {
+                                if !udp_conns.contains_key(&peer_id) {
+                                    udp_conns.insert(peer_id, sender);
+                                }
                             },
                             _ => (),
                         }
@@ -449,6 +433,12 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         } else {
                             error!("[Peers] Peer list is out-of-sync. This should never happen.")
                         }
+                    },
+                    Event::BytesReceived { num_bytes, from, bytes } => {
+                        info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
+
+                        // Publish this event to the outside world
+                        net_pub.send(Event::BytesReceived { num_bytes, from, bytes }).await;
                     },
                     _ => (),
                 }

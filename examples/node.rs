@@ -57,12 +57,12 @@ fn main() {
     block_on(node.shutdown());
 }
 
-async fn notification_handler(mut bytes_received_events: EventSub) {
-    while let Some(bytes_received_event) = bytes_received_events.next().await {
-        logger::info("", &format!("[Node ] Received event {:?}", bytes_received_event));
-        match bytes_received_event {
+async fn notification_handler(mut events: EventSub) {
+    while let Some(event) = events.next().await {
+        info!("[Node ] {:?} received", event);
+        match event {
             Event::BytesReceived { num_bytes, from, bytes } => {
-                info!("[Node ] Received {} from {}.", num_bytes, from);
+                info!("[Node ] Received: '{}' from {}", Utf8Message::from_bytes(&bytes[0..num_bytes]), from);
             }
             _ => (),
         }

@@ -137,6 +137,8 @@ impl RawConnection for TcpConnection {
             let mut bytes = vec![0; MAX_BUFFER_SIZE];
 
             let num_bytes = self.stream.read(&mut bytes).await?;
+
+            // FIXME: investigate why we receive streams of 0 bytes.
             if num_bytes > 0 {
                 Ok(Event::BytesReceived {
                     num_bytes,
@@ -172,13 +174,7 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
                     let stream = stream
                         .expect("[TCP  ] Error unwrapping incoming stream");
 
-                    debug!("[TCP  ] Connection established (Incoming)");
-
-                    /*
-                    let peer_id = PeerId(stream.peer_addr()
-                        .expect("[TCP  ] Error creating peer id from stream")
-                        .ip());
-                    */
+                    info!("[TCP  ] Connection established (Incoming)");
 
                     let conn = match TcpConnection::new(stream) {
                         Ok(conn) => conn,

@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Clone)]
 pub struct Utf8Message {
     data: String,
@@ -18,5 +20,11 @@ impl Utf8Message {
 
     pub fn as_bytes(&self) -> Vec<u8> {
         Vec::from(self.data.as_bytes())
+    }
+}
+
+impl fmt::Display for Utf8Message {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.data)
     }
 }
