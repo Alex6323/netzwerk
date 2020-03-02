@@ -24,7 +24,8 @@ pub enum Event {
         num_peers: usize,
     },
 
-    /// Raised when a peer was accepted.
+    /// Raised when an actor was spawned to handle a new connection.
+    /// TODO: maybe rename to 'ConnActorStarted'?
     PeerAccepted {
         peer_id: PeerId,
         protocol: Protocol,
@@ -76,7 +77,7 @@ pub enum Event {
         from_peer: PeerId,
     },
 
-    /// Raised when the system should to try to (re)connect to a peer after a certain delay.
+    /// Raised when the system should try to (re)connect to a peer after a certain delay.
     TryConnect {
         peer_id: PeerId,
     }
@@ -92,7 +93,7 @@ impl fmt::Debug for Event {
                 write!(f, "Event::PeerRemoved  {{ peer_id = {:?}, num_peers = {} }}", peer_id, num_peers),
 
             Event::PeerAccepted { peer_id, protocol, .. } =>
-                write!(f, "Event::Accepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
+                write!(f, "Event::PeerAccepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
 
             Event::PeerConnected { peer_id, num_conns } =>
                 write!(f, "Event::PeerConnected: {{ peer_id = {:?}, num_conns = {} }}", peer_id, num_conns),

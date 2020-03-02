@@ -96,7 +96,7 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
 
     // Register TCP actor (ta = tcp actor)
     let command_ta_recv = command_dp.register(crate::commands::TCP);
-    let (event_ta_send, event_ta_recv) = events::channel();
+    //let (event_ta_send, event_ta_recv) = events::channel();
 
     // Register UDP actor (ta = tcp actor)
     //let command_ua_recv = command_dp.register(crate::udp::UDP);
@@ -115,11 +115,11 @@ pub fn init(config: Config) -> (Network, Shutdown, EventSubscriber) {
 
     // This actor is the most crucial of the pack. It manages the peers
     // list, and keeps track of all the network connections.
-    let pa = spawn(peers::actor(command_pa_recv, event_pa_recv, event_ta_recv, event_pa_send, message_net_send));
+    let pa = spawn(peers::actor(command_pa_recv, event_pa_recv, event_pa_send.clone(), message_net_send));
 
     // This actor is responsible for listening on a TCP socket, and send
     // incoming streams to the peers actor.
-    let ta = spawn(tcp::actor(binding_addr, command_ta_recv, event_ta_send));
+    let ta = spawn(tcp::acceptor(binding_addr, command_ta_recv, event_pa_send));
 
     // This actor is responsible for listening on a UDP socket, and send
     // incoming packets to the peers actor.

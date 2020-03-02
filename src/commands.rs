@@ -25,15 +25,15 @@ const COMMAND_CHAN_CAPACITY: usize = 1;
 #[derive(Clone)]
 pub enum Command {
 
-    /// Adds a peer to the system.
+    /// Adds a peer to the system. Optionally tries to connect to it immediatedly.
     AddPeer {
-        peer: Peer
-        //autoconnect: bool
+        peer: Peer,
+        //connect: bool
     },
 
-    /// Removes a peer from the system.
+    /// Disconnects and removes a peer from the system.
     RemovePeer {
-        peer_id: PeerId
+        peer_id: PeerId,
     },
 
     /*

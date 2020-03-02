@@ -13,9 +13,16 @@ use futures::sink::SinkExt;
 use futures::{select, FutureExt};
 use log::*;
 
+use std::fmt;
 use std::result;
 
 pub(crate) type ConnectionResult<T> = result::Result<T, ConnectionError>;
+
+#[derive(Debug)]
+pub enum ConnectionType {
+    Incoming,
+    Outgoing,
+}
 
 /// Represents a TCP connection.
 pub struct TcpConnection {
@@ -31,21 +38,29 @@ pub struct TcpConnection {
 
     /// The remote address.
     remote_addr: SocketAddr,
+    /*
+    conn_type: ConnectionType,
+    */
 }
 
 impl TcpConnection {
 
     /// Creates a new TCP connection from a TCP stream instance.
-    pub fn new(stream: TcpStream) -> ConnectionResult<Self> {
+    pub fn new(stream: TcpStream /*, conn_type: ConnectionType*/) -> ConnectionResult<Self> {
+
+        // NOTE: Buffer this in case the stream stops
         let local_addr = stream.local_addr()?;
         let remote_addr = stream.peer_addr()?;
-        let peer_id = PeerId(remote_addr.ip());
+
+        // NOTE: Temporary until we use a different mechanism for node IDs
+        let peer_id = Address::Ip(remote_addr).into();
 
         Ok(Self {
             peer_id,
             stream,
             local_addr,
             remote_addr,
+            //conn_type,
         })
     }
 
@@ -86,13 +101,21 @@ impl TcpConnection {
     }
 }
 
+impl fmt::Display for TcpConnection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} <-> {}", self.local_addr(), self.remote_addr())
+    }
+}
+
 impl Drop for TcpConnection {
     fn drop(&mut self) {
         if self.is_not_broken() {
             match self.shutdown() {
-                Ok(()) => (),
+                Ok(()) => {
+                    info!("[TCP  ] Shut down connection with peer {:?}", self.peer_id())
+                },
                 Err(e) => {
-                    warn!("[TCP  ] Error shutting down TCP stream");
+                    warn!("[TCP  ] Error shutting down connection with peer {:?}", self.peer_id());
                     warn!("[TCP  ] Error was: {:?}", e);
                 }
             }
@@ -117,6 +140,9 @@ impl RawConnection for TcpConnection {
 
     async fn send(&mut self, bytes: Vec<u8>) -> SendResult<Event> {
 
+        // FIXME: just try to write to the stream, and handle the error, and
+        // remove 'broken' API, because it only works if the connection is stable
+        // between check and write.
         if self.is_not_broken() {
 
             self.stream.write_all(&bytes).await?;
@@ -132,6 +158,9 @@ impl RawConnection for TcpConnection {
 
     async fn recv(&mut self) -> RecvResult<Event> {
 
+        // FIXME: just try to read from the stream, and handle the error, and
+        // remove 'broken' API, because it only works if the connection is stable
+        // between check and read.
         if self.is_not_broken() {
 
             let mut buffer = vec![0; MAX_BUFFER_SIZE];
@@ -156,7 +185,7 @@ impl RawConnection for TcpConnection {
 }
 
 /// Starts the TCP socket actor.
-pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut event_pub: EventPub) {
+pub async fn acceptor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut event_pub: EventPub) {
     debug!("[TCP  ] Starting actor");
 
     let listener = TcpListener::bind(binding_addr).await.expect("error binding TCP listener");
@@ -169,41 +198,13 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
     // NOTE: 'fuse' ensures 'None' forever after the first 'None'
     loop {
         select! {
-            // Handle connection requests
-            stream = incoming.next().fuse() => {
-                if let Some(stream) = stream {
-                    let stream = stream
-                        .expect("[TCP  ] Error unwrapping incoming stream");
 
-                    info!("[TCP  ] Connection established (Incoming)");
-
-                    let conn = match TcpConnection::new(stream) {
-                        Ok(conn) => conn,
-                        Err(e) => {
-                            warn!["TCP  ] Error creating TCP connection from stream"];
-                            warn!["TCP  ] Error was: {:?}", e];
-                            continue;
-                        }
-                    };
-
-                    let peer_id = conn.peer_id();
-                    let (conn_actor_send, conn_actor_recv) = conns::channel();
-
-                    spawn(conn_actor(conn, conn_actor_recv, event_pub.clone()));
-
-                    event_pub.send(
-                        Event::PeerAccepted {
-                            peer_id,
-                            protocol: Protocol::Tcp,
-                            sender: conn_actor_send,
-                        }).await
-                        .expect("[TCP  ] Error sending PeerAccepted event");
-                }
-            },
-            // Handle API commands
+            // === Handle commands ===
             command = command_rx.next().fuse() => {
                 if let Some(command) = command {
-                    debug!("[TCP  ] {:?}", command);
+
+                    debug!("[TCP  ] {:?} received.", command);
+
                     match command {
                         Command::Shutdown => {
                             break;
@@ -212,38 +213,69 @@ pub async fn actor(binding_addr: SocketAddr, mut command_rx: CommandRx, mut even
                     }
                 }
             },
+
+            // === Handle connection requests ===
+            stream = incoming.next().fuse() => {
+                if let Some(stream) = stream {
+
+                    let stream = stream
+                        .expect("[TCP  ] Error unwrapping incoming stream");
+
+                    let _ = spawn_conn_actor(stream, ConnectionType::Incoming, &mut event_pub).await;
+                }
+            },
         }
     }
 
     debug!("[TCP  ] Stopping actor");
 }
 
-pub async fn try_connect(peer_id: &PeerId, peer_addr: &SocketAddr) -> Option<TcpConnection> {
-    info!("[TCP  ] Trying to connect to peer: {:?} over TCP", peer_id);
+pub async fn connect(peer_id: &PeerId, peer_addr: &SocketAddr, mut event_pub: EventPub) -> bool {
+    info!("[TCP  ] Trying to connect to {:?}.", peer_id);
 
     match TcpStream::connect(peer_addr).await {
         Ok(stream) => {
-            info!("[TCP  ] Connection established (Outgoing)");
-
-            match TcpConnection::new(stream) {
-                Ok(conn) => Some(conn),
-                Err(e) => {
-                    warn!("[TCP  ] Connection immediatedly broke");
-                    warn!("[TCP  ] Error was: {:?}", e);
-                    None
-                }
-            }
+            spawn_conn_actor(stream, ConnectionType::Outgoing, &mut event_pub).await
         },
         Err(e) => {
             warn!("[TCP  ] Connection attempt failed (Peer offline?)");
             warn!("[TCP  ] Error was: {:?}", e);
-            None
+            false
         }
     }
 }
 
+async fn spawn_conn_actor(stream: TcpStream, conn_type: ConnectionType, event_pub: &mut EventPub) -> bool {
+
+    let conn = match TcpConnection::new(stream/*, conn_type*/) {
+        Ok(conn) => conn,
+        Err(e) => {
+            warn!["TCP  ] Error creating TCP connection from stream"];
+            warn!["TCP  ] Error was: {:?}", e];
+            return false;
+        }
+    };
+
+    info!("[TCP  ] Connection {} established. ({:?})", conn, conn_type);
+
+    let peer_id = conn.peer_id();
+    let (conn_actor_send, conn_actor_recv) = conns::channel();
+
+    spawn(conn_actor(conn, conn_actor_recv, event_pub.clone()));
+
+    event_pub.send(
+        Event::PeerAccepted {
+            peer_id,
+            protocol: Protocol::Tcp,
+            sender: conn_actor_send,
+        }).await
+        .expect("[TCP  ] Error sending PeerAccepted event");
+
+    true
+}
+
 // TODO: split in 'conn_write_actor' and 'conn_read_actor'
-pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut event_pub: EventPub) {
+async fn conn_actor(mut conn: TcpConnection, mut bytes_to_send: ByteReceiver, mut event_pub: EventPub) {
     debug!("[TCP  ] Starting connection actor");
 
     loop {
@@ -260,13 +292,13 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
                     debug!("[TCP  ] Incoming byte stream stopped (from {:?})", conn.peer_id());
 
                     event_pub.send(Event::StreamStopped { from_peer: conn.peer_id() }).await
-                        .expect("TCP  ] Error publ. Event::PeerDisconnected");
+                        .expect("TCP  ] Error publ. Event::StreamStopped");
 
                     break;
                 }
             },
 
-            bytes_out = bytes_rx.next().fuse() => {
+            bytes_out = bytes_to_send.next().fuse() => {
                 if let Some(bytes_out) = bytes_out {
 
                     let event = conn.send(bytes_out).await
