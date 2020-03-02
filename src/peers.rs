@@ -5,7 +5,7 @@ use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
 
-use async_std::net::{IpAddr, SocketAddr};
+use async_std::net::IpAddr;
 use async_std::task::{self, spawn};
 use async_std::prelude::*;
 use futures::{select, FutureExt};
@@ -13,6 +13,7 @@ use futures::sink::SinkExt;
 use log::*;
 
 use std::collections::HashMap;
+use std::fmt;
 use std::result;
 use std::time::Duration;
 
@@ -33,6 +34,12 @@ impl From<Url> for PeerId {
 impl From<IpAddr> for PeerId {
     fn from(ip_addr: IpAddr) -> Self {
         Self(ip_addr)
+    }
+}
+
+impl fmt::Display for PeerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -201,45 +208,45 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                         event_pub.send(Event::PeerRemoved { peer_id, num_peers: peers.num() }).await;
                     },
-                    Command::SendBytes { to, bytes } => {
+                    Command::SendBytes { to_peer, bytes } => {
                         let num_bytes = bytes.len();
 
-                        if let Some(sender) = tcp_conns.get_mut(&to) {
+                        if let Some(sender) = tcp_conns.get_mut(&to_peer) {
                             sender.send(bytes).await;
 
-                        } else if let Some(sender) = udp_conns.get_mut(&to) {
+                        } else if let Some(sender) = udp_conns.get_mut(&to_peer) {
                             sender.send(bytes).await;
 
                         } else {
-                            warn!("[Peers] No connection with peer {:?}", to);
+                            warn!("[Peers] No connection with peer {:?}", to_peer);
                             continue;
                         }
 
-                        event_pub.send(Event::BytesSent { num_bytes, to }).await;
+                        event_pub.send(Event::BytesSent { to_peer, num_bytes }).await;
                     },
                     Command::BroadcastBytes { bytes } => {
-                        let mut num_sends = 0;
+                        let mut num_conns = 0;
 
                         // TODO: send concurrently
                         for (_, sender) in tcp_conns.iter_mut() {
                             sender.send(bytes.clone()).await;
-                            num_sends += 1;
+                            num_conns += 1;
                         }
 
                         // TODO: send concurrently
                         for (_, sender) in udp_conns.iter_mut() {
                             sender.send(bytes.clone()).await;
-                            num_sends += 1;
+                            num_conns += 1;
                         }
 
-                        if num_sends == 0 {
+                        if num_conns == 0 {
                             warn!("[Peers] No connections available for broadcast.");
                             continue;
                         }
 
                         event_pub.send(Event::BytesBroadcasted {
                             num_bytes: bytes.len(),
-                            num_sends,
+                            num_conns,
                         });
                     },
                     Command::Shutdown => {
@@ -263,18 +270,20 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                 match peer_event {
                     Event::PeerAdded { peer_id, num_peers } => {
-                        info!("[Peers] Peer '{:?}' added ({:?}).", peer_id, num_peers);
+                        info!("[Peers] Peer '{:?}' added. (num_peers = {})", peer_id, num_peers);
 
                         // Publish this event to the outside world
                         net_pub.send(Event::PeerAdded { peer_id, num_peers }).await;
                     },
                     Event::PeerRemoved { peer_id, num_peers } => {
-                        info!("[Peers] Peer {:?} removed. ({:?}).", peer_id, num_peers);
+                        info!("[Peers] Peer {:?} removed. (num_peers = {})", peer_id, num_peers);
 
                         // Publish this event to the outside world
                         net_pub.send(Event::PeerRemoved { peer_id, num_peers }).await;
                     },
                     Event::PeerAccepted { peer_id, protocol, sender } => {
+                        info!("[Peers] Peer {:?} accepted. ({:?})", peer_id, protocol);
+
                         match protocol {
                             Protocol::Tcp => {
                                 if !tcp_conns.contains_key(&peer_id) {
@@ -289,22 +298,27 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             _ => (),
                         }
 
-                        event_pub.send(Event::PeerConnected { peer_id }).await
+                        let num_conns = tcp_conns.len() + udp_conns.len();
+
+                        event_pub.send(Event::PeerConnected { peer_id, num_conns }).await
                             .expect("[Peers] Error sending 'PeerConnected' event");
                     }
-                    Event::PeerConnected { peer_id } => {
+                    Event::PeerConnected { peer_id, num_conns } => {
+                        info!("[Peers] Peer {:?} connected. (num_conns = {})", peer_id, num_conns);
 
                         if let Some(peer) = peers.get_mut(&peer_id) {
                             peer.set_state(PeerState::Connected);
 
                             // Publish this event to the outside world
-                            net_pub.send(Event::PeerConnected { peer_id }).await;
+                            net_pub.send(Event::PeerConnected { peer_id, num_conns }).await;
 
                         } else {
                             error!("[Peers] Peer list is out-of-sync. This should never happen.")
                         }
                     },
-                    Event::PeerDisconnected { peer_id, reconnect } => {
+                    Event::PeerDisconnected { peer_id, num_conns } => {
+                        info!("[Peers] Peer {:?} disconnected. (num_conns = {})", peer_id, num_conns);
+
                         tcp_conns.remove(&peer_id);
                         udp_conns.remove(&peer_id);
 
@@ -313,36 +327,42 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             peer.set_state(PeerState::NotConnected);
 
                             // Publish this event to the outside world
-                            net_pub.send(Event::PeerDisconnected { peer_id, reconnect }).await;
+                            net_pub.send(Event::PeerDisconnected { peer_id, num_conns }).await;
 
-                            if let Some(after) = reconnect {
-                                raise_event_after_delay(Event::TryConnect { peer_id }, after, &event_pub);
-                            }
+                            raise_event_after_delay(Event::TryConnect { peer_id }, RECONNECT_COOLDOWN, &event_pub);
+
                         } else {
                             error!("[Peers] Peer list is out-of-sync. This should never happen.")
                         }
                     },
-                    Event::PeerStalled { peer_id, .. } => {
+                    Event::PeerStalled { peer_id } => {
+                        info!("[Peers] Peer {:?} stalled.", peer_id);
+
                         if let Some(peer) = peers.get_mut(&peer_id) {
                             peer.set_state(PeerState::Stalled);
                         } else {
                             error!("[Peers] Peer list is out-of-sync. This should never happen.");
                         }
                     },
-                    Event::BytesSent { num_bytes, to } => {
-                        info!("[Peers] Sent {:?} bytes to {:?}", num_bytes, to);
+                    Event::BytesSent { to_peer, num_bytes, .. } => {
+                        info!("[Peers] Sent {} bytes to {:?}.", num_bytes, to_peer);
                     },
-                    Event::BytesBroadcasted { num_bytes, num_sends } => {
-                        info!("[Peers] Broadcasted {:?} bytes to {:?} peer/s", num_bytes, num_sends);
+                    Event::BytesBroadcasted { num_bytes, num_conns } => {
+                        info!("[Peers] Broadcasted {} bytes over {:?} connection/s.", num_bytes, num_conns);
                     }
-                    Event::BytesReceived { peer_id, num_bytes, from, bytes } => {
-                        info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
+                    Event::BytesReceived { from_peer, with_addr, num_bytes, buffer } => {
+                        info!("[Peers] Received {} bytes from {:?}.", num_bytes, from_peer);
 
                         // Publish this event to the outside world
-                        net_pub.send(Event::BytesReceived { peer_id, num_bytes, from, bytes }).await;
+                        net_pub.send(Event::BytesReceived { from_peer, with_addr, num_bytes, buffer }).await;
                     },
+                    Event::StreamStopped { from_peer } => {
+                        info!("[Peers] Incoming byte stream from {:?} stopped.", from_peer);
+                    }
                     Event::TryConnect { peer_id } => {
                         // ^^^ You read wrong...it's *Try*, not Bit!!! Now feel ashamed of yourself!
+                        info!("[Peers] Trying to connect to {:?}.", peer_id);
+
                         if let Some(mut peer) = peers.get_mut(&peer_id) {
                             if peer.is_connected() {
                                 continue;
@@ -359,8 +379,6 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                                         let peer_id = conn.peer_id();
                                         let (conn_actor_send, conn_actor_recv) = conns::channel();
-
-                                        //tcp_conns.insert(peer.id(), sender);
 
                                         spawn(tcp::conn_actor(conn, conn_actor_recv, event_pub.clone()));
 
@@ -391,7 +409,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
             // === TEMPORARY: JOIN THIS WITH OTHER EVENTS: handle tcp events ===
             tcp_event = event_sub2.next().fuse() => {
                 if tcp_event.is_none() {
-                    debug!("[Peers] TCP Event channel closed");
+                    debug!("[Peers] TCP Event channel closed.");
                     break;
                 }
                 let tcp_event = tcp_event.unwrap();
@@ -399,6 +417,8 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                 match tcp_event {
                     Event::PeerAccepted { peer_id, protocol, sender } => {
+                        info!("[Peers] Peer {:?} accepted. ({:?})", peer_id, protocol);
+
                         match protocol {
                             Protocol::Tcp => {
                                 if !tcp_conns.contains_key(&peer_id) {
@@ -413,32 +433,37 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                             _ => (),
                         }
 
-                        event_pub.send(Event::PeerConnected { peer_id }).await
+                        let num_conns = tcp_conns.len() + udp_conns.len();
+
+                        event_pub.send(Event::PeerConnected { peer_id, num_conns }).await
                             .expect("[Peers] Error sending 'PeerConnected' event");
                     }
-                    Event::PeerDisconnected { peer_id, reconnect } => {
-                        tcp_conns.remove(&peer_id);
-                        udp_conns.remove(&peer_id);
+                    Event::BytesReceived { from_peer, with_addr, num_bytes, buffer } => {
+                        info!("[Peers] Received {:?} bytes from {:?}.", num_bytes, from_peer);
 
-                        if let Some(peer) = peers.get_mut(&peer_id) {
+                        // Publish this event to the outside world
+                        net_pub.send(Event::BytesReceived { from_peer, with_addr, num_bytes, buffer }).await;
+                    },
+                    Event::StreamStopped { from_peer } => {
+                        info!("[Peers] Incoming byte stream from {:?} stopped.", from_peer);
+
+                        tcp_conns.remove(&from_peer);
+                        udp_conns.remove(&from_peer);
+
+                        if let Some(peer) = peers.get_mut(&from_peer) {
 
                             peer.set_state(PeerState::NotConnected);
 
-                            // Publish this event to the outside world
-                            net_pub.send(Event::PeerDisconnected { peer_id, reconnect }).await;
+                            let num_conns = tcp_conns.len() + udp_conns.len();
 
-                            if let Some(after) = reconnect {
-                                raise_event_after_delay(Event::TryConnect { peer_id }, after, &event_pub);
-                            }
+                            // Publish this event to the outside world
+                            net_pub.send(Event::PeerDisconnected { peer_id: from_peer, num_conns }).await;
+
+                            raise_event_after_delay(Event::TryConnect { peer_id: from_peer }, RECONNECT_COOLDOWN, &event_pub);
+
                         } else {
                             error!("[Peers] Peer list is out-of-sync. This should never happen.")
                         }
-                    },
-                    Event::BytesReceived { peer_id, num_bytes, from, bytes } => {
-                        info!("[Peers] Received {:?} bytes from {:?}", num_bytes, from);
-
-                        // Publish this event to the outside world
-                        net_pub.send(Event::BytesReceived { peer_id, num_bytes, from, bytes }).await;
                     },
                     _ => (),
                 }

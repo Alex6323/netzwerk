@@ -24,7 +24,6 @@ use async_std::task::{self, spawn, JoinHandle};
 use futures::prelude::*;
 use log::*;
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::commands::{CommandDispatcher, CommandSender};

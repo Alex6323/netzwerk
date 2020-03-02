@@ -3,7 +3,6 @@ use crate::conns::ByteSender;
 use crate::peers::PeerId;
 
 use std::fmt;
-use std::time::Duration;
 
 use futures::channel::mpsc;
 
@@ -35,41 +34,46 @@ pub enum Event {
     /// Raised when a peer is connected.
     PeerConnected {
         peer_id: PeerId,
-        //address: Address,
-        //num_connections: usize,
+        num_conns: usize,
     },
 
     /// Raised when a peer was disconnected.
     PeerDisconnected {
         peer_id: PeerId,
-        reconnect: Option<u64>,
-        //num_connections: usize,
+        num_conns: usize,
     },
 
     /// Raised when no packet was received from this peer for some time.
     PeerStalled {
         peer_id: PeerId,
-        since: Duration,
     },
 
     /// Raised when bytes have been sent to a peer.
     BytesSent {
+        to_peer: PeerId,
         num_bytes: usize,
-        to: PeerId,
     },
 
     /// Raised when bytes have been sent to all peers.
     BytesBroadcasted {
         num_bytes: usize,
-        num_sends: usize,
+        num_conns: usize,
     },
 
     /// Raised when bytes have been received.
     BytesReceived {
-        peer_id: PeerId,
+        from_peer: PeerId,
+        with_addr: Address,
         num_bytes: usize,
-        from: Address,
-        bytes: Vec<u8>,
+        buffer: Vec<u8>,
+    },
+
+    /// Raised by stream-based protocols when a stream ends.
+    ///
+    /// NOTE: This usually causes a `PeerDisconnected` event as a consequence if this is
+    /// the only connection with that peer.
+    StreamStopped {
+        from_peer: PeerId,
     },
 
     /// Raised when the system should to try to (re)connect to a peer after a certain delay.
@@ -90,28 +94,26 @@ impl fmt::Debug for Event {
             Event::PeerAccepted { peer_id, protocol, .. } =>
                 write!(f, "Event::Accepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
 
-            Event::PeerConnected { peer_id } =>
-                write!(f, "Event::PeerConnected: {{ peer_id = {:?} }}", peer_id),
+            Event::PeerConnected { peer_id, num_conns } =>
+                write!(f, "Event::PeerConnected: {{ peer_id = {:?}, num_conns = {} }}", peer_id, num_conns),
 
-            /*
-            Event::PeerConnectedOverUdp { peer_id, address } =>
-                write!(f, "Event::PeerConnectedOverUdp {{  peer_id = {:?}, address = {:?}", peer_id, address),
-            */
+            Event::PeerDisconnected { peer_id, num_conns } =>
+                write!(f, "Event::PeerDisconnected: {{ peer_id = {:?}, num_conns = {} }}", peer_id, num_conns),
 
-            Event::PeerDisconnected { peer_id, reconnect } =>
-                write!(f, "Event::PeerDisconnected: {{ peer_id = {:?}, reconnect = {:?} }}", peer_id, reconnect),
+            Event::PeerStalled { peer_id } =>
+                write!(f, "Event::PeerStalled {{ peer_id = {:?} }}", peer_id),
 
-            Event::PeerStalled { peer_id, since } =>
-                write!(f, "Event::PeerStalled {{ peer_id = {:?}, since = {:?} ms }}", peer_id, since),
+            Event::BytesSent { to_peer, num_bytes } =>
+                write!(f, "Event::BytesSent: {{ to_peer = {:?}, num_bytes = {:?} }})", to_peer, num_bytes),
 
-            Event::BytesSent { num_bytes, to } =>
-                write!(f, "Event::BytesSent: {{ num_bytes = {:?}, to = {:?} }})", num_bytes, to),
+            Event::BytesBroadcasted { num_bytes, num_conns } =>
+                write!(f, "Event::BytesBroadcasted {{ num_bytes = {:?}, num_conns = {:?} }}", num_bytes, num_conns),
 
-            Event::BytesBroadcasted { num_bytes, num_sends } =>
-                write!(f, "Event::BytesBroadcasted {{ num_bytes = {:?}, num_sends = {:?} }}", num_bytes, num_sends),
+            Event::BytesReceived { from_peer, num_bytes, .. } =>
+                write!(f, "Event::BytesReceived {{ from_peer = {:?}, num_bytes = {} }}", from_peer, num_bytes),
 
-            Event::BytesReceived { num_bytes, from, .. } =>
-                write!(f, "Event::BytesReceived {{ num_bytes = {:?}, from = {:?} }}", num_bytes, from),
+            Event::StreamStopped { from_peer } =>
+                write!(f, "Event::StreamStopped: {{ from_peer = {:?} }})", from_peer),
 
             Event::TryConnect { peer_id } =>
                 write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),

@@ -59,10 +59,12 @@ fn main() {
 
 async fn notification_handler(mut events: EventSub) {
     while let Some(event) = events.next().await {
-        info!("[Node ] {:?} received", event);
+        //info!("[Node ] {:?} received", event);
         match event {
-            Event::BytesReceived { num_bytes, from, bytes } => {
-                info!("[Node ] Received: '{}' from {}", Utf8Message::from_bytes(&bytes[0..num_bytes]), from);
+            Event::BytesReceived { from_peer, num_bytes, buffer, .. } => {
+                info!("[Node ] Received: '{}' from peer {}",
+                    Utf8Message::from_bytes(&buffer[0..num_bytes]),
+                    from_peer);
             }
             _ => (),
         }
@@ -96,7 +98,7 @@ impl Node {
     }
 
     pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {
-        self.network.send(SendBytes { to: peer_id, bytes: message.as_bytes() }).await;
+        self.network.send(SendBytes { to_peer: peer_id, bytes: message.as_bytes() }).await;
     }
 
     pub async fn broadcast_msg(&mut self, message: Utf8Message) {

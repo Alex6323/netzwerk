@@ -51,7 +51,10 @@ impl Address {
 
 impl fmt::Display for Address {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
+        match *self {
+            Address::Ip(socket_addr) => write!(f, "{}", socket_addr),
+            _ => write!(f, "{}", "other")
+        }
     }
 }
 

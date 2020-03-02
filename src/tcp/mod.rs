@@ -1,11 +1,11 @@
 use crate::address::{Address, Protocol};
-use crate::conns::{ByteReceiver, MAX_BUFFER_SIZE, RawConnection, RECONNECT_COOLDOWN, RecvResult, self, SendResult};
+use crate::conns::{ByteReceiver, MAX_BUFFER_SIZE, RawConnection, RecvResult, self, SendResult};
 use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::errors::{ConnectionError, RecvError, SendError};
 use crate::events::{Event, EventPublisher as EventPub};
 use crate::peers::PeerId;
 
-use async_std::net::{IpAddr, SocketAddr, TcpListener, TcpStream, Shutdown};
+use async_std::net::{SocketAddr, TcpListener, TcpStream, Shutdown};
 use async_std::prelude::*;
 use async_std::task::spawn;
 use async_trait::async_trait;
@@ -122,8 +122,8 @@ impl RawConnection for TcpConnection {
             self.stream.write_all(&bytes).await?;
 
             Ok(Event::BytesSent {
+                to_peer: self.peer_id(),
                 num_bytes: bytes.len(),
-                to: self.peer_id(),
             })
         } else {
             Err(SendError::SendBytes)
@@ -134,17 +134,17 @@ impl RawConnection for TcpConnection {
 
         if self.is_not_broken() {
 
-            let mut bytes = vec![0; MAX_BUFFER_SIZE];
+            let mut buffer = vec![0; MAX_BUFFER_SIZE];
 
-            let num_bytes = self.stream.read(&mut bytes).await?;
+            let num_bytes = self.stream.read(&mut buffer).await?;
 
             // FIXME: investigate why we receive streams of 0 bytes.
             if num_bytes > 0 {
                 Ok(Event::BytesReceived {
-                    peer_id: self.peer_id(),
+                    from_peer: self.peer_id(),
+                    with_addr: Address::new(self.remote_addr()),
                     num_bytes,
-                    from: Address::new(self.remote_addr()),
-                    bytes
+                    buffer,
                 })
             } else {
                 Err(RecvError::RecvBytes("0 bytes"))
@@ -242,6 +242,7 @@ pub async fn try_connect(peer_id: &PeerId, peer_addr: &SocketAddr) -> Option<Tcp
     }
 }
 
+// TODO: split in 'conn_write_actor' and 'conn_read_actor'
 pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut event_pub: EventPub) {
     debug!("[TCP  ] Starting connection actor");
 
@@ -251,16 +252,15 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
 
             bytes_in = conn.recv().fuse() => {
                 if let Ok(bytes_in) = bytes_in {
+
                     event_pub.send(bytes_in).await.
                         expect("[TCP  ] Error receiving bytes");
 
                 } else {
                     debug!("[TCP  ] Incoming byte stream stopped (from {:?})", conn.peer_id());
 
-                    event_pub.send(Event::PeerDisconnected {
-                        peer_id: conn.peer_id(),
-                        reconnect: Some(RECONNECT_COOLDOWN),
-                    }).await.expect("TCP  ] Error publ. Event::PeerDisconnected");
+                    event_pub.send(Event::StreamStopped { from_peer: conn.peer_id() }).await
+                        .expect("TCP  ] Error publ. Event::PeerDisconnected");
 
                     break;
                 }
@@ -268,6 +268,7 @@ pub async fn conn_actor(mut conn: TcpConnection, mut bytes_rx: ByteReceiver, mut
 
             bytes_out = bytes_rx.next().fuse() => {
                 if let Some(bytes_out) = bytes_out {
+
                     let event = conn.send(bytes_out).await
                         .expect("[TCP  ] Error sending bytes");
 

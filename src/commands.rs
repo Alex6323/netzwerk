@@ -48,8 +48,8 @@ pub enum Command {
 
     /// Sends bytes to a connected peer.
     SendBytes {
+        to_peer: PeerId,
         bytes: Vec<u8>,
-        to: PeerId,
     },
 
     /// Sends bytes to all connected peers.
@@ -82,8 +82,8 @@ impl fmt::Debug for Command {
             Command::RemovePeer { peer_id } =>
                 write!(f, "Command::RemovePeer {{ peer_id = {:?} }}", peer_id),
 
-            Command::SendBytes { to, .. } =>
-                write!(f, "Command::SendBytes {{ to = {:?} }}", to),
+            Command::SendBytes { to_peer, .. } =>
+                write!(f, "Command::SendBytes {{ to_peer = {:?} }}", to_peer),
 
             Command::BroadcastBytes { .. } =>
                 write!(f, "Command::BroadcastBytes"),
