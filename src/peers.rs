@@ -203,12 +203,9 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     Command::AddPeer { mut peer, connect_attempts } => {
                         server_peers.add(peer.clone());
 
-                        // FIXME: probably not a good idea to include 'client_peers' (confusing)
-                        let num_peers = server_peers.num() + client_peers.num();
-
                         event_pub.send(Event::PeerAdded {
                             peer_id: peer.id(),
-                            num_peers }).await;
+                            num_peers: server_peers.num() }).await;
 
                         let retry = match connect_attempts {
                             Some(0) => Some(0),
@@ -220,15 +217,14 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                     },
                     Command::RemovePeer { peer_id } => {
                         server_peers.remove(&peer_id);
-                        client_peers.remove(&peer_id);
 
                         // TODO: check if this correctly ends the connection actor
                         tcp_conns.remove(&peer_id);
                         udp_conns.remove(&peer_id);
 
-                        let num_peers = server_peers.num() + client_peers.num();
-
-                        event_pub.send(Event::PeerRemoved { peer_id, num_peers }).await;
+                        event_pub.send(Event::PeerRemoved {
+                            peer_id,
+                            num_peers: server_peers.num() }).await;
                     },
                     Command::Connect { peer_id, num_retries } => {
                         if !server_peers.contains(&peer_id) {
@@ -371,9 +367,10 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                             peer.set_state(PeerState::NotConnected);
 
-                            let retry = Some(RECONNECT_ATTEMPTS);
-
-                            raise_event_after_delay(Event::TryConnect { peer_id, retry }, RECONNECT_COOLDOWN, &event_pub);
+                            raise_event_after_delay(Event::TryConnect {
+                                peer_id,
+                                retry: Some(RECONNECT_ATTEMPTS)
+                            }, RECONNECT_COOLDOWN, &event_pub);
 
                         } else if client_peers.contains(&peer_id) {
 
