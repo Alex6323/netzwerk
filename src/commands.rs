@@ -36,16 +36,6 @@ pub enum Command {
         peer_id: PeerId,
     },
 
-    /*
-    ConnectPeer {
-        peer_id: PeerId,
-    },
-
-    DisconnectPeer {
-        peer_id: PeerId,
-    },
-    */
-
     /// Sends bytes to a connected peer.
     SendBytes {
         to_peer: PeerId,
@@ -59,18 +49,6 @@ pub enum Command {
 
     /// Shuts down the system.
     Shutdown,
-
-    /*
-    UpdatePeer {
-        peer_id: PeerId,
-        f: FnMut(&mut Peer),
-    },
-
-    RequestInfo {
-        f: Fn(&Peer) -> Response,
-        response: futures::channel::oneshot::Sender<Response>,
-    }
-    */
 }
 
 impl fmt::Debug for Command {

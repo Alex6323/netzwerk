@@ -1,5 +1,5 @@
-use crate::address::{Address, Protocol};
-use crate::conns::ByteSender;
+use crate::address::{Address, Url};
+use crate::conns::BytesSender;
 use crate::peers::PeerId;
 
 use std::fmt;
@@ -28,8 +28,8 @@ pub enum Event {
     /// TODO: maybe rename to 'ConnActorStarted'?
     PeerAccepted {
         peer_id: PeerId,
-        protocol: Protocol,
-        sender: ByteSender,
+        peer_url: Url,
+        sender: BytesSender,
     },
 
     /// Raised when a peer is connected.
@@ -73,13 +73,14 @@ pub enum Event {
     ///
     /// NOTE: This usually causes a `PeerDisconnected` event as a consequence if this is
     /// the only connection with that peer.
-    StreamStopped {
-        from_peer: PeerId,
+    SendRecvStopped {
+        peer_id: PeerId,
     },
 
     /// Raised when the system should try to (re)connect to a peer after a certain delay.
     TryConnect {
         peer_id: PeerId,
+        //num_attempts: usize,
     }
 }
 
@@ -92,8 +93,8 @@ impl fmt::Debug for Event {
             Event::PeerRemoved { peer_id, num_peers } =>
                 write!(f, "Event::PeerRemoved  {{ peer_id = {:?}, num_peers = {} }}", peer_id, num_peers),
 
-            Event::PeerAccepted { peer_id, protocol, .. } =>
-                write!(f, "Event::PeerAccepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, protocol),
+            Event::PeerAccepted { peer_id, peer_url, .. } =>
+                write!(f, "Event::PeerAccepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, peer_url.protocol()),
 
             Event::PeerConnected { peer_id, num_conns } =>
                 write!(f, "Event::PeerConnected: {{ peer_id = {:?}, num_conns = {} }}", peer_id, num_conns),
@@ -113,8 +114,8 @@ impl fmt::Debug for Event {
             Event::BytesReceived { from_peer, num_bytes, .. } =>
                 write!(f, "Event::BytesReceived {{ from_peer = {:?}, num_bytes = {} }}", from_peer, num_bytes),
 
-            Event::StreamStopped { from_peer } =>
-                write!(f, "Event::StreamStopped: {{ from_peer = {:?} }})", from_peer),
+            Event::SendRecvStopped { peer_id } =>
+                write!(f, "Event::SendRecvStopped: {{ peer_id = {:?} }})", peer_id),
 
             Event::TryConnect { peer_id } =>
                 write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),

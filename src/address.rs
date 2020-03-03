@@ -65,6 +65,9 @@ pub enum Url {
 
     /// Represents a UDP url ("udp://...").
     Udp(SocketAddr),
+
+    /// A temporary placeholder
+    Other,
 }
 
 impl Url {
@@ -118,16 +121,22 @@ impl Url {
     }
 
     pub fn protocol(&self) -> Protocol {
+        use Url::*;
+
         match *self {
-            Url::Tcp(_) => Protocol::Tcp,
-            Url::Udp(_) => Protocol::Udp,
+            Tcp(_) => Protocol::Tcp,
+            Udp(_) => Protocol::Udp,
+            _ => panic!("Unsupported protocol"),
         }
     }
 
     pub fn address(&self) -> Address {
+        use Url::*;
+
         match *self {
-            Url::Tcp(socket_addr) => Address::Ip(socket_addr),
-            Url::Udp(socket_addr) => Address::Ip(socket_addr),
+            Tcp(socket_addr) => Address::Ip(socket_addr),
+            Udp(socket_addr) => Address::Ip(socket_addr),
+            _ => panic!("Unsupported protocol"),
         }
     }
 }

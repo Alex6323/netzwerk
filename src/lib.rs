@@ -1,7 +1,6 @@
 #![recursion_limit="2048"]
 
 pub use address::{Address, Protocol, Url};
-pub use conns::Connections;
 pub use config::{Config, ConfigBuilder};
 pub use events::{Event, EventSubscriber};
 pub use commands::Command;

@@ -1,5 +1,5 @@
-use crate::address::{Address, Protocol};
-use crate::conns::{ByteReceiver, MAX_BUFFER_SIZE, RawConnection, RecvResult, self, SendResult};
+use crate::address::{Address, Protocol, Url};
+use crate::conns::{BytesReceiver, MAX_BUFFER_SIZE, RawConnection, RecvResult, self, SendResult};
 use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::errors::{ConnectionError, RecvError, SendError};
 use crate::events::{Event, EventPublisher as EventPub};
@@ -246,6 +246,7 @@ pub async fn connect(peer_id: &PeerId, peer_addr: &SocketAddr, mut event_pub: Ev
 }
 
 async fn spawn_conn_actor(stream: TcpStream, conn_type: ConnectionType, event_pub: &mut EventPub) -> bool {
+    use Protocol::*;
 
     let conn = match TcpConnection::new(stream/*, conn_type*/) {
         Ok(conn) => conn,
@@ -259,6 +260,8 @@ async fn spawn_conn_actor(stream: TcpStream, conn_type: ConnectionType, event_pu
     info!("[TCP  ] Connection {} established. ({:?})", conn, conn_type);
 
     let peer_id = conn.peer_id();
+    let peer_url = Url::new(conn.remote_addr(), Tcp);
+
     let (conn_actor_send, conn_actor_recv) = conns::channel();
 
     spawn(conn_actor(conn, conn_actor_recv, event_pub.clone()));
@@ -266,7 +269,7 @@ async fn spawn_conn_actor(stream: TcpStream, conn_type: ConnectionType, event_pu
     event_pub.send(
         Event::PeerAccepted {
             peer_id,
-            protocol: Protocol::Tcp,
+            peer_url,
             sender: conn_actor_send,
         }).await
         .expect("[TCP  ] Error sending PeerAccepted event");
@@ -275,7 +278,7 @@ async fn spawn_conn_actor(stream: TcpStream, conn_type: ConnectionType, event_pu
 }
 
 // TODO: split in 'conn_write_actor' and 'conn_read_actor'
-async fn conn_actor(mut conn: TcpConnection, mut bytes_to_send: ByteReceiver, mut event_pub: EventPub) {
+async fn conn_actor(mut conn: TcpConnection, mut bytes_to_send: BytesReceiver, mut event_pub: EventPub) {
     debug!("[TCP  ] Starting connection actor");
 
     loop {
@@ -291,8 +294,8 @@ async fn conn_actor(mut conn: TcpConnection, mut bytes_to_send: ByteReceiver, mu
                 } else {
                     debug!("[TCP  ] Incoming byte stream stopped (from {:?})", conn.peer_id());
 
-                    event_pub.send(Event::StreamStopped { from_peer: conn.peer_id() }).await
-                        .expect("TCP  ] Error publ. Event::StreamStopped");
+                    event_pub.send(Event::SendRecvStopped { peer_id: conn.peer_id() }).await
+                        .expect("TCP  ] Error publ. Event::SendRecvStopped");
 
                     break;
                 }
@@ -308,6 +311,11 @@ async fn conn_actor(mut conn: TcpConnection, mut bytes_to_send: ByteReceiver, mu
                         .expect("[TCP  ] Error published event");
 
                 } else {
+                    debug!("[TCP  ] Outgoing byte stream stopped (from {:?})", conn.peer_id());
+
+                    event_pub.send(Event::SendRecvStopped { peer_id: conn.peer_id() }).await
+                        .expect("TCP  ] Error publ. Event::SendRecvStopped");
+
                     break;
                 }
             }
