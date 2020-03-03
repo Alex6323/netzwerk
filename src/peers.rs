@@ -1,6 +1,6 @@
 use crate::address::{Address, Url, Protocol};
 use crate::commands::{Command, CommandReceiver as CommandRx};
-use crate::conns::{BytesSender, RawConnection, RECONNECT_COOLDOWN};
+use crate::conns::BytesSender;
 use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
@@ -17,6 +17,9 @@ use std::result;
 use std::time::Duration;
 
 pub type PeerResult<T> = result::Result<T, errors::PeerError>;
+
+const RECONNECT_COOLDOWN: u64 = 5000;
+const RECONNECT_ATTEMPTS: usize = 10;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct PeerId(pub(crate) Address);
@@ -197,18 +200,23 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                 info!("[Peers] {:?}", command);
 
                 match command {
-                    Command::AddPeer { mut peer } => {
+                    Command::AddPeer { mut peer, connect_attempts } => {
                         server_peers.add(peer.clone());
 
+                        // FIXME: probably not a good idea to include 'client_peers' (confusing)
                         let num_peers = server_peers.num() + client_peers.num();
 
                         event_pub.send(Event::PeerAdded {
                             peer_id: peer.id(),
                             num_peers }).await;
 
-                        // Immediatedly try to connect to that peer
-                        // TODO: make this optional
-                        event_pub.send(Event::TryConnect { peer_id: peer.id() }).await;
+                        let retry = match connect_attempts {
+                            Some(0) => Some(0),
+                            Some(n) => Some(n-1),
+                            None => continue,
+                        };
+
+                        event_pub.send(Event::TryConnect { peer_id: peer.id(), retry }).await;
                     },
                     Command::RemovePeer { peer_id } => {
                         server_peers.remove(&peer_id);
@@ -221,6 +229,13 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         let num_peers = server_peers.num() + client_peers.num();
 
                         event_pub.send(Event::PeerRemoved { peer_id, num_peers }).await;
+                    },
+                    Command::Connect { peer_id, num_retries } => {
+                        if !server_peers.contains(&peer_id) {
+                            continue;
+                        }
+
+                        event_pub.send(Event::TryConnect { peer_id, retry: Some(num_retries) }).await;
                     },
                     Command::SendBytes { to_peer, bytes } => {
                         let num_bytes = bytes.len();
@@ -356,7 +371,9 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                             peer.set_state(PeerState::NotConnected);
 
-                            raise_event_after_delay(Event::TryConnect { peer_id }, RECONNECT_COOLDOWN, &event_pub);
+                            let retry = Some(RECONNECT_ATTEMPTS);
+
+                            raise_event_after_delay(Event::TryConnect { peer_id, retry }, RECONNECT_COOLDOWN, &event_pub);
 
                         } else if client_peers.contains(&peer_id) {
 
@@ -402,7 +419,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         // notify user
                         net_pub.send(Event::BytesReceived { from_peer, with_addr, num_bytes, buffer }).await;
                     },
-                    Event::TryConnect { peer_id } => {
+                    Event::TryConnect { peer_id, mut retry } => {
 
                         let mut peer = {
                             if let Some(peer) = server_peers.get_mut(&peer_id) {
@@ -427,9 +444,16 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
 
                                 if !tcp::connect(&peer.id(), peer_addr, event_pub.clone()).await {
 
+                                    let retry = match retry {
+                                        Some(0) => Some(0),
+                                        Some(1) => None,
+                                        Some(n) => Some(n-1),
+                                        None => continue,
+                                    };
+
                                     info!("[Peers] Connection attempt failed. Retrying in {} ms", RECONNECT_COOLDOWN);
 
-                                    raise_event_after_delay(Event::TryConnect { peer_id }, RECONNECT_COOLDOWN, &event_pub);
+                                    raise_event_after_delay(Event::TryConnect { peer_id, retry }, RECONNECT_COOLDOWN, &event_pub);
 
                                 }
                             },

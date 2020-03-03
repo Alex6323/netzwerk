@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::result;
 
 pub(crate) const MAX_BUFFER_SIZE: usize = 1604;
-pub(crate) const RECONNECT_COOLDOWN: u64 = 5000;
 
 pub type SendResult<T> = result::Result<T, SendError>;
 pub type RecvResult<T> = result::Result<T, RecvError>;

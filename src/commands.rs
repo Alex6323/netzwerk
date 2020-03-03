@@ -28,12 +28,25 @@ pub enum Command {
     /// Adds a peer to the system. Optionally tries to connect to it immediatedly.
     AddPeer {
         peer: Peer,
-        //connect: bool
+
+        /// None:    do not try to connect when adding the peer
+        /// Some(0): indefinitely try to connect to this peer
+        /// Some(n): try n times to connect to this peer
+        connect_attempts: Option<usize>,
     },
 
     /// Disconnects and removes a peer from the system.
     RemovePeer {
         peer_id: PeerId,
+    },
+
+    /// Connects to a peer already in the peer list.
+    Connect {
+        peer_id: PeerId,
+
+        /// 0: indefinitely try to connect to this peer
+        /// n: try n times to connect to this peer
+        num_retries: usize,
     },
 
     /// Sends bytes to a connected peer.
@@ -54,11 +67,14 @@ pub enum Command {
 impl fmt::Debug for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Command::AddPeer { peer } =>
-                write!(f, "Command::AddPeer {{ peer_id = {:?} }} ", peer.id()),
+            Command::AddPeer { peer, connect_attempts } =>
+                write!(f, "Command::AddPeer {{ peer_id = {:?}, connect_attempts = {:?} }} ", peer.id(), connect_attempts),
 
             Command::RemovePeer { peer_id } =>
                 write!(f, "Command::RemovePeer {{ peer_id = {:?} }}", peer_id),
+
+            Command::Connect { peer_id, num_retries } =>
+                write!(f, "Command::Connect {{ peer_id = {:?}, num_retries = {} }}", peer_id, num_retries),
 
             Command::SendBytes { to_peer, .. } =>
                 write!(f, "Command::SendBytes {{ to_peer = {:?} }}", to_peer),
@@ -177,16 +193,19 @@ pub async fn actor(mut command_dp: CommandDispatcher, mut command_rx: CommandRec
 
         let actors = match command {
             AddPeer { .. } => {
-                One("peers")
+                One(PEERS)
             },
             RemovePeer { .. } => {
-                One("peers")
+                One(PEERS)
             },
+            Connect { .. } => {
+                One(PEERS)
+            }
             SendBytes { .. } => {
-                One("peers")
+                One(PEERS)
             },
             BroadcastBytes { .. } => {
-                One("peers")
+                One(PEERS)
             }
             Shutdown => {
                 command_dp.send(Shutdown).to(All).await;

@@ -90,11 +90,15 @@ impl Node {
     }
 
     pub async fn add_peer(&mut self, peer: Peer) {
-        self.network.send(AddPeer { peer }).await;
+        self.network.send(AddPeer { peer, connect_attempts: Some(5) }).await;
     }
 
     pub async fn remove_peer(&mut self, peer_id: PeerId) {
         self.network.send(RemovePeer { peer_id }).await;
+    }
+
+    pub async fn connect(&mut self, peer_id: PeerId) {
+        self.network.send(Connect { peer_id,  num_retries: 5 }).await;
     }
 
     pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {

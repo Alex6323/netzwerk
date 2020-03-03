@@ -80,7 +80,11 @@ pub enum Event {
     /// Raised when the system should try to (re)connect to a peer after a certain delay.
     TryConnect {
         peer_id: PeerId,
-        //num_attempts: usize,
+
+        /// None:    do not try to connect when adding the peer
+        /// Some(0): indefinitely try to connect to this peer
+        /// Some(n): try n times to connect to this peer
+        retry: Option<usize>,
     }
 }
 
@@ -117,8 +121,8 @@ impl fmt::Debug for Event {
             Event::SendRecvStopped { peer_id } =>
                 write!(f, "Event::SendRecvStopped: {{ peer_id = {:?} }})", peer_id),
 
-            Event::TryConnect { peer_id } =>
-                write!(f, "Event::TryConnect: {{ peer_id = {:?} }}", peer_id),
+            Event::TryConnect { peer_id, retry } =>
+                write!(f, "Event::TryConnect: {{ peer_id = {:?}, retry_attempts = {:?} }}", peer_id, retry),
         }
     }
 }
