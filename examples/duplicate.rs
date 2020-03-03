@@ -1,17 +1,19 @@
-//! This example shows how to create and run a TCP node using `netzwerk`.
+//! This example shows how two TCP nodes follow a predefined policy to drop a duplicate
+//! connection, and end up agreeing on one single TCP connection between them.
+//!
 //! You might want to run several instances of such a node in separate
 //! terminals and connect those instances by specifying commandline arguments.
 //!
 //! ```bash
-//! cargo r --example node -- --bind localhost:1337 --peers tcp://localhost:1338 --msg ping
-//! cargo r --example node -- --bind localhost:1338 --peers tcp://localhost:1337 --msg pong
+//! cargo r --example duplicate -- --bind localhost:1337 --peers tcp://localhost:1338 --msg ping
+//! cargo r --example duplicate -- --bind localhost:1338 --peers tcp://localhost:1337 --msg pong
 //! ```
 
 use netzwerk::{
     Config,
     Command::*,
     Event,
-    EventSubscriber as EventSub,
+    EventSubscriber as Events,
     Network,
     Peer, PeerId,
     Shutdown,
@@ -32,7 +34,10 @@ fn main() {
 
     logger::init(log::LevelFilter::Info);
 
-    let (network, shutdown, receiver) = netzwerk::init(config.clone());
+    let (network, shutdown, events) = netzwerk::init(config.clone());
+
+    // Start the net-layer actor
+    task::spawn(netl_actor(events));
 
     let mut node = Node::builder()
         .with_config(config)
@@ -40,27 +45,19 @@ fn main() {
         .with_shutdown(shutdown)
         .build();
 
-    task::spawn(notification_handler(receiver));
-
-    let msg = Utf8Message::new(&args.msg);
 
     block_on(node.init());
-
-    // NOTE: all the node business logic has to go inside of the following scope!!!
-    {
-
-    // For example: spamming the network
-    std::thread::spawn(|| spam(network, msg, 50, 1000));
-
-    }
-
+    // TODO: send handshake
     block_on(node.shutdown());
 }
 
-async fn notification_handler(mut events: EventSub) {
+async fn netl_actor(mut events: Events) {
     while let Some(event) = events.next().await {
         //info!("[Node ] {:?} received", event);
         match event {
+            Event::PeerConnected { peer_id, num_conns, timestamp } => {
+                error!("Stay calm! I just needed the red color: Event::PeerConnected");
+            }
             Event::BytesReceived { from_peer, num_bytes, buffer, .. } => {
                 info!("[Node ] Received: '{}' from peer {}",
                     Utf8Message::from_bytes(&buffer[0..num_bytes]),
@@ -69,6 +66,10 @@ async fn notification_handler(mut events: EventSub) {
             _ => (),
         }
     }
+}
+
+struct Handshake {
+    server_port: u16,
 }
 
 struct Node {
@@ -86,6 +87,7 @@ impl Node {
             self.add_peer(peer.clone()).await;
         }
 
+
         info!("[Node ] Initialized");
     }
 
@@ -101,12 +103,8 @@ impl Node {
         self.network.send(Connect { peer_id,  num_retries: 5 }).await;
     }
 
-    pub async fn send_msg(&mut self, message: Utf8Message, peer_id: PeerId) {
-        self.network.send(SendBytes { to_peer: peer_id, bytes: message.as_bytes() }).await;
-    }
-
-    pub async fn broadcast_msg(&mut self, message: Utf8Message) {
-        self.network.send(BroadcastBytes { bytes: message.as_bytes() }).await;
+    pub async fn send_handshake(&mut self, handshake: Handshake, peer_id: PeerId) {
+        //self.network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
     }
 
     pub async fn shutdown(mut self) {
@@ -133,17 +131,6 @@ impl Node {
         NodeBuilder::new()
     }
 
-}
-
-fn spam(mut network: Network, msg: Utf8Message, num: usize, interval: u64) {
-    info!("[Node ] Starting spammer: {:?} messages", num);
-    task::block_on(async move {
-        for _ in 0..num {
-            task::sleep(std::time::Duration::from_millis(interval)).await;
-            network.send(BroadcastBytes { bytes: msg.as_bytes() }).await;
-        }
-    });
-    info!("[Node ] Stopping spammer");
 }
 
 struct NodeBuilder {

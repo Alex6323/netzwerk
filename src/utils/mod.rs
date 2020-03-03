@@ -3,6 +3,7 @@ use async_std::task;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+// TODO: make this an async function again?
 pub fn to_single_socket_address(addr: impl ToSocketAddrs) -> SocketAddr {
     // TODO: proper error handling
     task::block_on(async {
