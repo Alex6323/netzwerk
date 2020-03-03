@@ -4,6 +4,7 @@ use crate::conns::BytesSender;
 use crate::errors;
 use crate::events::{Event, EventPublisher as EventPub, EventSubscriber as EventSub};
 use crate::tcp;
+use crate::utils;
 
 use async_std::task::{self, spawn};
 use async_std::prelude::*;
@@ -335,11 +336,12 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         }
 
                         let num_conns = tcp_conns.len() + udp_conns.len();
+                        let timestamp = utils::timestamp_millis();
 
-                        event_pub.send(Event::PeerConnected { peer_id, num_conns }).await
+                        event_pub.send(Event::PeerConnected { peer_id, num_conns, timestamp }).await
                             .expect("[Peers] Error sending 'PeerConnected' event");
                     }
-                    Event::PeerConnected { peer_id, num_conns } => {
+                    Event::PeerConnected { peer_id, num_conns, timestamp } => {
 
                         let mut peer = {
                             if let Some(peer) = server_peers.get_mut(&peer_id) {
@@ -355,7 +357,7 @@ pub async fn actor(mut command_rx: CommandRx, mut event_sub: EventSub, mut event
                         peer.set_state(PeerState::Connected);
 
                         // notify user
-                        net_pub.send(Event::PeerConnected { peer_id, num_conns }).await;
+                        net_pub.send(Event::PeerConnected { peer_id, num_conns, timestamp }).await;
                     },
                     Event::SendRecvStopped { peer_id } => {
 

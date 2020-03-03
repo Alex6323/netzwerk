@@ -4,6 +4,7 @@ use crate::commands::{Command, CommandReceiver as CommandRx};
 use crate::errors::{ConnectionError, RecvError, SendError};
 use crate::events::{Event, EventPublisher as EventPub};
 use crate::peers::PeerId;
+use crate::utils;
 
 use async_std::net::{SocketAddr, TcpListener, TcpStream, Shutdown};
 use async_std::prelude::*;
@@ -38,15 +39,12 @@ pub struct TcpConnection {
 
     /// The remote address.
     remote_addr: SocketAddr,
-    /*
-    conn_type: ConnectionType,
-    */
 }
 
 impl TcpConnection {
 
     /// Creates a new TCP connection from a TCP stream instance.
-    pub fn new(stream: TcpStream /*, conn_type: ConnectionType*/) -> ConnectionResult<Self> {
+    pub fn new(stream: TcpStream) -> ConnectionResult<Self> {
 
         // NOTE: Buffer this in case the stream stops
         let local_addr = stream.local_addr()?;
@@ -60,7 +58,6 @@ impl TcpConnection {
             stream,
             local_addr,
             remote_addr,
-            //conn_type,
         })
     }
 
@@ -248,7 +245,7 @@ pub async fn connect(peer_id: &PeerId, peer_addr: &SocketAddr, mut event_pub: Ev
 async fn spawn_conn_actor(stream: TcpStream, conn_type: ConnectionType, event_pub: &mut EventPub) -> bool {
     use Protocol::*;
 
-    let conn = match TcpConnection::new(stream/*, conn_type*/) {
+    let conn = match TcpConnection::new(stream) {
         Ok(conn) => conn,
         Err(e) => {
             warn!["TCP  ] Error creating TCP connection from stream"];

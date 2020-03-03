@@ -36,6 +36,13 @@ pub enum Event {
     PeerConnected {
         peer_id: PeerId,
         num_conns: usize,
+
+        /// The Unix timestamp when the connection was established.
+        ///
+        /// NOTE: If the handshake message (done by some downstream library) reveals
+        /// a duplicate connection, then this timestamp can be used to decide which
+        /// of those to drop by some agreed policy.
+        timestamp: u64,
     },
 
     /// Raised when a peer was disconnected.
@@ -100,8 +107,8 @@ impl fmt::Debug for Event {
             Event::PeerAccepted { peer_id, peer_url, .. } =>
                 write!(f, "Event::PeerAccepted  {{ peer_id = {:?}, protocol = {:?} }}", peer_id, peer_url.protocol()),
 
-            Event::PeerConnected { peer_id, num_conns } =>
-                write!(f, "Event::PeerConnected: {{ peer_id = {:?}, num_conns = {} }}", peer_id, num_conns),
+            Event::PeerConnected { peer_id, num_conns, timestamp } =>
+                write!(f, "Event::PeerConnected: {{ peer_id = {:?}, num_conns = {}, ts = {} }}", peer_id, num_conns, timestamp),
 
             Event::PeerDisconnected { peer_id, num_conns } =>
                 write!(f, "Event::PeerDisconnected: {{ peer_id = {:?}, num_conns = {} }}", peer_id, num_conns),
