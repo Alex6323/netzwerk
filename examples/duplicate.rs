@@ -21,8 +21,11 @@ use netzwerk::{
 
 use common::*;
 
-use async_std::task::{self, block_on};
-use futures::prelude::*;
+use async_std::task::{self, block_on, spawn};
+use async_std::prelude::*;
+use futures::channel::oneshot;
+use futures::{select, FutureExt};
+use futures::sink::SinkExt;
 use log::*;
 use structopt::StructOpt;
 
@@ -36,59 +39,90 @@ fn main() {
 
     let (network, shutdown, events) = netzwerk::init(config.clone());
 
-    // Start the net-layer actor
-    task::spawn(netl_actor(events));
-
     let mut node = Node::builder()
         .with_config(config)
         .with_network(network.clone())
         .with_shutdown(shutdown)
+        .with_events(events)
         .build();
 
 
     block_on(node.init());
-    // TODO: send handshake
-    block_on(node.shutdown());
-}
-
-async fn netl_actor(mut events: Events) {
-    while let Some(event) = events.next().await {
-        //info!("[Node ] {:?} received", event);
-        match event {
-            Event::PeerConnected { peer_id, num_conns, timestamp } => {
-                error!("Stay calm! I just needed the red color: Event::PeerConnected");
-            }
-            Event::BytesReceived { from_peer, num_bytes, buffer, .. } => {
-                info!("[Node ] Received: '{}' from peer {}",
-                    Utf8Message::from_bytes(&buffer[0..num_bytes]),
-                    from_peer);
-            }
-            _ => (),
-        }
-    }
+    block_on(node.run());
 }
 
 struct Handshake {
     server_port: u16,
 }
 
+enum NodeState {
+    Initializing,
+    Running,
+    Stopping,
+}
+
 struct Node {
     config: Config,
     network: Network,
     shutdown: Shutdown,
+    events: Events,
+    state: NodeState,
 }
 
 impl Node {
 
     pub async fn init(&mut self) {
+
         info!("[Node ] Initializing...");
+        self.state = NodeState::Initializing;
 
         for peer in self.config.peers().values() {
             self.add_peer(peer.clone()).await;
         }
 
-
         info!("[Node ] Initialized");
+    }
+
+    pub async fn run(mut self) {
+        self.state = NodeState::Running;
+
+        info!("[Node ] Running...");
+        block_on(self.event_loop());
+    }
+
+    async fn event_loop(mut self) {
+        let shutdown_rx = &mut self.shutdown_rx();
+
+        loop {
+            select! {
+                event = self.events.next().fuse() => {
+                    let event = event.unwrap();
+
+                    match event {
+                        Event::PeerConnected { peer_id, num_conns, timestamp } => {
+                            error!("Stay calm! I just needed the red color: Event::PeerConnected");
+                        }
+                        Event::BytesReceived { from_peer, num_bytes, buffer, .. } => {
+                            info!("[Node ] Received: '{}' from peer {}",
+                                Utf8Message::from_bytes(&buffer[0..num_bytes]),
+                                from_peer);
+                        }
+                        _ => (),
+                    }
+                },
+                shutdown = shutdown_rx.fuse() => {
+                    break;
+                }
+            }
+        }
+
+        info!("[Node ] Shutting down...");
+        self.state = NodeState::Stopping;
+
+        self.network.send(Shutdown).await;
+        self.shutdown.finish_tasks().await;
+
+        info!("[Node ] Complete. See you soon!");
     }
 
     pub async fn add_peer(&mut self, peer: Peer) {
@@ -107,23 +141,20 @@ impl Node {
         //self.network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
     }
 
-    pub async fn shutdown(mut self) {
-        self.block_on_ctrl_c();
+    fn shutdown_rx(&self) -> oneshot::Receiver<()> {
+        let (sender, receiver) = oneshot::channel();
 
-        info!("[Node ] Shutting down...");
+        spawn(async move {
+            let mut rt = tokio::runtime::Runtime::new()
+                .expect("[Node ] Error creating Tokio runtime");
 
-        self.network.send(Shutdown).await;
-        self.shutdown.finish_tasks().await;
+            rt.block_on(tokio::signal::ctrl_c())
+                .expect("[Node ] Error blocking on CTRL-C");
 
-        info!("[Node ] Complete. See you soon!");
-    }
+            sender.send(());
+        });
 
-    fn block_on_ctrl_c(&self) {
-        let mut rt = tokio::runtime::Runtime::new()
-            .expect("[Node ] Error creating Tokio runtime");
-
-        rt.block_on(tokio::signal::ctrl_c())
-            .expect("[Node ] Error blocking on CTRL-C");
+        receiver
     }
 
 
@@ -137,6 +168,7 @@ struct NodeBuilder {
     config: Option<Config>,
     network: Option<Network>,
     shutdown: Option<Shutdown>,
+    events: Option<Events>,
 }
 
 impl NodeBuilder {
@@ -145,6 +177,7 @@ impl NodeBuilder {
             config: None,
             network: None,
             shutdown: None,
+            events: None,
         }
     }
 
@@ -163,6 +196,11 @@ impl NodeBuilder {
         self
     }
 
+    pub fn with_events(mut self, events: Events) -> Self {
+        self.events.replace(events);
+        self
+    }
+
     pub fn build(self) -> Node {
         Node {
             config: self.config
@@ -173,6 +211,11 @@ impl NodeBuilder {
 
             shutdown: self.shutdown
                 .expect("[Node ] No shutdown instance provided"),
+
+            events: self.events
+                .expect("[Node ] No events instance provided"),
+
+            state: NodeState::Initializing,
         }
     }
 }
