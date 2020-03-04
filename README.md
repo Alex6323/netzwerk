@@ -11,13 +11,13 @@
 * TCP
 * UDP (wip)
 
-## Run the example
+## Examples
 
-Open two terminals and run the following two commands respectively.
+To run a minimal "pingpong" example open two terminals and enter the following two commands respectively.
 
 ```Rust
-cargo r --example node -- --bind localhost:1337 --peers tcp://localhost:1338 --msg ping
-cargo r --example node -- --bind localhost:1338 --peers tcp://localhost:1337 --msg pong
+cargo r --example pingpong -- --bind localhost:1337 --peers tcp://localhost:1338 --msg ping
+cargo r --example pingpong -- --bind localhost:1338 --peers tcp://localhost:1337 --msg pong
 
 ```
 
