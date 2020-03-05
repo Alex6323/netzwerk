@@ -27,6 +27,7 @@ use futures::channel::oneshot;
 use futures::{select, FutureExt};
 use futures::sink::SinkExt;
 use log::*;
+use serde::{Serialize, Deserialize};
 use structopt::StructOpt;
 
 mod common;
@@ -51,8 +52,15 @@ fn main() {
     block_on(node.run());
 }
 
+#[derive(Serialize, Deserialize)]
 struct Handshake {
     server_port: u16,
+}
+
+impl Handshake {
+    pub fn serialize(&self) -> Vec<u8> {
+        bincode::serialize(self).unwrap()
+    }
 }
 
 enum NodeState {
@@ -138,7 +146,7 @@ impl Node {
     }
 
     pub async fn send_handshake(&mut self, handshake: Handshake, peer_id: PeerId) {
-        //self.network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
+        self.network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
     }
 
     fn shutdown_rx(&self) -> oneshot::Receiver<()> {
