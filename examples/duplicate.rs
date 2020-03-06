@@ -9,6 +9,8 @@
 //! cargo r --example duplicate -- --bind localhost:1338 --peers tcp://localhost:1337 --msg pong
 //! ```
 
+#![recursion_limit="256"]
+
 use netzwerk::{
     Config,
     Command::*,
@@ -25,7 +27,6 @@ use async_std::task::{self, block_on, spawn};
 use async_std::prelude::*;
 use futures::channel::oneshot;
 use futures::{select, FutureExt};
-use futures::sink::SinkExt;
 use log::*;
 use serde::{Serialize, Deserialize};
 use structopt::StructOpt;
@@ -38,21 +39,20 @@ fn main() {
 
     logger::init(log::LevelFilter::Info);
 
-    let (network, shutdown, events) = netzwerk::init(config.clone());
-
-    let mut node = Node::builder()
-        .with_config(config)
-        .with_network(network.clone())
-        .with_shutdown(shutdown)
-        .with_events(events)
-        .build();
-
+    let mut node = Node::from_config(config.clone());
 
     block_on(node.init());
-    block_on(node.run());
+
+    block_on(node.wait());
+    block_on(node.exit());
 }
 
-#[derive(Serialize, Deserialize)]
+enum Message {
+    Text(Utf8Message),
+    Handshake(Handshake),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 struct Handshake {
     server_port: u16,
 }
@@ -64,6 +64,7 @@ impl Handshake {
 }
 
 enum NodeState {
+    Off,
     Initializing,
     Running,
     Stopping,
@@ -71,159 +72,141 @@ enum NodeState {
 
 struct Node {
     config: Config,
-    network: Network,
-    shutdown: Shutdown,
-    events: Events,
+    network: Option<Network>,
+    shutdown: Option<Shutdown>,
     state: NodeState,
+    receiver: Option<oneshot::Receiver<()>>,
 }
 
 impl Node {
 
+    pub fn from_config(config: Config) -> Self {
+        Self {
+            config,
+            network: None,
+            shutdown: None,
+            state: NodeState::Off,
+            receiver: None,
+        }
+    }
+
     pub async fn init(&mut self) {
 
-        info!("[Node ] Initializing...");
         self.state = NodeState::Initializing;
+
+        let (network, shutdown, events) = netzwerk::init(self.config.clone());
+
+        self.network.replace(network.clone());
+        self.shutdown.replace(shutdown);
 
         for peer in self.config.peers().values() {
             self.add_peer(peer.clone()).await;
         }
 
-        info!("[Node ] Initialized");
-    }
+        let (sender, receiver) = oneshot::channel();
 
-    pub async fn run(mut self) {
-        self.state = NodeState::Running;
+        spawn(event_loop(events, sender, network, self.config.clone()));
+
+        self.receiver.replace(receiver);
 
         info!("[Node ] Running...");
-        block_on(self.event_loop());
+        self.state = NodeState::Running;
     }
 
-    async fn event_loop(mut self) {
-        let shutdown_rx = &mut self.shutdown_rx();
-
-        loop {
-            select! {
-                event = self.events.next().fuse() => {
-                    let event = event.unwrap();
-
-                    match event {
-                        Event::PeerConnected { peer_id, num_conns, timestamp } => {
-                            error!("Stay calm! I just needed the red color: Event::PeerConnected");
-                        }
-                        Event::BytesReceived { from_peer, num_bytes, buffer, .. } => {
-                            info!("[Node ] Received: '{}' from peer {}",
-                                Utf8Message::from_bytes(&buffer[0..num_bytes]),
-                                from_peer);
-                        }
-                        _ => (),
-                    }
-                },
-                shutdown = shutdown_rx.fuse() => {
-                    break;
-                }
-            }
+    pub async fn add_peer(&mut self, peer: Peer) {
+        if let Some(network) = self.network.as_mut() {
+            network.send(AddPeer { peer, connect_attempts: Some(5) }).await;
         }
+    }
+
+    pub async fn remove_peer(&mut self, peer_id: PeerId) {
+        if let Some(network) = self.network.as_mut() {
+            network.send(RemovePeer { peer_id }).await;
+        }
+    }
+
+    pub async fn connect(&mut self, peer_id: PeerId) {
+        if let Some(network) = self.network.as_mut() {
+            network.send(Connect { peer_id,  num_retries: 5 }).await;
+        }
+    }
+
+    pub async fn send_handshake(&mut self, handshake: Handshake, peer_id: PeerId) {
+        if let Some(network) = self.network.as_mut() {
+            network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
+        }
+    }
+
+    pub async fn wait(&mut self) {
+        if let Some(receiver) = self.receiver.as_mut() {
+            receiver.await.expect("error receiving shutdown signal");
+        }
+    }
+
+    pub async fn exit(mut self) {
 
         info!("[Node ] Shutting down...");
         self.state = NodeState::Stopping;
 
-        self.network.send(Shutdown).await;
-        self.shutdown.finish_tasks().await;
+        if let Some(mut network) = self.network {
+            network.send(Shutdown).await;
+        }
+        if let Some(mut shutdown) = self.shutdown {
+            shutdown.finish_tasks().await;
+        }
 
         info!("[Node ] Complete. See you soon!");
     }
-
-    pub async fn add_peer(&mut self, peer: Peer) {
-        self.network.send(AddPeer { peer, connect_attempts: Some(5) }).await;
-    }
-
-    pub async fn remove_peer(&mut self, peer_id: PeerId) {
-        self.network.send(RemovePeer { peer_id }).await;
-    }
-
-    pub async fn connect(&mut self, peer_id: PeerId) {
-        self.network.send(Connect { peer_id,  num_retries: 5 }).await;
-    }
-
-    pub async fn send_handshake(&mut self, handshake: Handshake, peer_id: PeerId) {
-        self.network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
-    }
-
-    fn shutdown_rx(&self) -> oneshot::Receiver<()> {
-        let (sender, receiver) = oneshot::channel();
-
-        spawn(async move {
-            let mut rt = tokio::runtime::Runtime::new()
-                .expect("[Node ] Error creating Tokio runtime");
-
-            rt.block_on(tokio::signal::ctrl_c())
-                .expect("[Node ] Error blocking on CTRL-C");
-
-            sender.send(());
-        });
-
-        receiver
-    }
-
-
-    pub fn builder() -> NodeBuilder {
-        NodeBuilder::new()
-    }
-
 }
 
-struct NodeBuilder {
-    config: Option<Config>,
-    network: Option<Network>,
-    shutdown: Option<Shutdown>,
-    events: Option<Events>,
-}
+async fn event_loop(mut events: Events, sender: oneshot::Sender<()>, mut network: Network, config: Config) {
 
-impl NodeBuilder {
-    pub fn new() -> Self {
-        Self {
-            config: None,
-            network: None,
-            shutdown: None,
-            events: None,
+    let el_shutdown = &mut shutdown_listener();
+
+    loop {
+        select! {
+            event = events.next().fuse() => {
+                let event = event.unwrap();
+                info!("[Node ] {:?} received.", event);
+
+                match event {
+                    Event::PeerConnected { peer_id, num_conns, timestamp } => {
+
+                        info!("[Node ] Sending handshake to {}", peer_id);
+                        let handshake = Handshake { server_port: config.binding_addr.port().unwrap() };
+                        network.send(SendBytes { to_peer: peer_id, bytes: handshake.serialize() }).await;
+                    }
+                    Event::BytesReceived { from_peer, num_bytes, buffer, .. } => {
+                        info!("[Node ] Received: '{}' bytes from peer {}", num_bytes, from_peer);
+                            let handshake: Handshake = bincode::deserialize(&buffer[0..num_bytes])
+                                .expect("error deserializing handshake");
+
+                        info!("[Node ] Handshake: {:?}", handshake);
+                    }
+                    _ => (),
+                }
+            },
+            shutdown = el_shutdown.fuse() => {
+                break;
+            }
         }
     }
 
-    pub fn with_config(mut self, config: Config) -> Self {
-        self.config.replace(config);
-        self
-    }
+    sender.send(()).expect("error sending shutdown signal");
+}
 
-    pub fn with_network(mut self, network: Network) -> Self {
-        self.network.replace(network);
-        self
-    }
+fn shutdown_listener() -> oneshot::Receiver<()> {
+    let (sender, receiver) = oneshot::channel();
 
-    pub fn with_shutdown(mut self, shutdown: Shutdown) -> Self {
-        self.shutdown.replace(shutdown);
-        self
-    }
+    spawn(async move {
+        let mut rt = tokio::runtime::Runtime::new()
+            .expect("[Node ] Error creating Tokio runtime");
 
-    pub fn with_events(mut self, events: Events) -> Self {
-        self.events.replace(events);
-        self
-    }
+        rt.block_on(tokio::signal::ctrl_c())
+            .expect("[Node ] Error blocking on CTRL-C");
 
-    pub fn build(self) -> Node {
-        Node {
-            config: self.config
-                .expect("[Node ] No config provided"),
+        sender.send(()).expect("error sending shutdown signal");
+    });
 
-            network: self.network
-                .expect("[Node ] No network instance provided"),
-
-            shutdown: self.shutdown
-                .expect("[Node ] No shutdown instance provided"),
-
-            events: self.events
-                .expect("[Node ] No events instance provided"),
-
-            state: NodeState::Initializing,
-        }
-    }
+    receiver
 }
